@@ -1,5 +1,5 @@
 {
-  "name": "bolt-container-agent",
+  "name": "aisso-container-agent",
   "private": true,
   "type": "module",
   "version": "1.0.0",

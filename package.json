@@ -1,6 +1,6 @@
 
 {
-  "name": "bolt",
+  "name": "aisso",
   "description": "An AI Agent",
   "private": true,
   "license": "MIT",
@@ -23,9 +23,9 @@
     "start:unix": "wrangler dev",
     "start": "node -e \"const { spawn } = require('child_process'); const isWindows = process.platform === 'win32'; const cmd = isWindows ? 'npm run start:windows' : 'npm run start:unix'; const child = spawn(cmd, { shell: true, stdio: 'inherit' }); child.on('exit', code => process.exit(code));\"",
     "dockerstart": "wrangler dev --ip 0.0.0.0 --port 5173",
-    "dockerrun": "docker run -it -d --name bolt-ai-live -p 5173:5173 --env-file .env.local bolt-ai",
-    "dockerbuild:prod": "docker build -t bolt-ai:production -t bolt-ai:latest --target bolt-ai-production .",
-    "dockerbuild": "docker build -t bolt-ai:development -t bolt-ai:latest --target development .",
+    "dockerrun": "docker run -it -d --name aisso-ai-live -p 5173:5173 --env-file .env.local aisso-ai",
+    "dockerbuild:prod": "docker build -t aisso-ai:production -t aisso-ai:latest --target aisso-ai-production .",
+    "dockerbuild": "docker build -t aisso-ai:development -t aisso-ai:latest --target development .",
     "typecheck": "tsc",
     "typegen": "wrangler types",
     "preview": "pnpm run build && pnpm run start",

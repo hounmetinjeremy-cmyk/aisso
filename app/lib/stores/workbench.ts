@@ -143,8 +143,8 @@ export class WorkbenchStore {
   attachTerminal(terminal: ITerminal) {
     this.#terminalStore.attachTerminal(terminal);
   }
-  attachBoltTerminal(terminal: ITerminal) {
-    this.#terminalStore.attachBoltTerminal(terminal);
+  attachAissoTerminal(terminal: ITerminal) {
+    this.#terminalStore.attachAissoTerminal(terminal);
   }
 
   detachTerminal(terminal: ITerminal) {
