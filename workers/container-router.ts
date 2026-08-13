@@ -11,9 +11,6 @@ export async function routeToContainer(
   env: Env,
   getContainer: (binding: DurableObjectNamespace, name: string) => { fetch(request: Request): Promise<Response> },
 ): Promise<Response> {
-  // @ts-expect-error - USER_CONTAINER n'existe dans Env qu'une fois le bloc
-  // [[containers]] / [[durable_objects.bindings]] décommenté dans wrangler.toml
-  // (voir container/README.md pour l'activer).
   const binding = env.USER_CONTAINER as DurableObjectNamespace | undefined;
 
   if (!binding) {
