@@ -1,5 +1,6 @@
 import type { WebContainer } from '@webcontainer/api';
 import { WORK_DIR_NAME } from '~/utils/constants';
+import { workbenchStore } from '~/lib/stores/workbench';
 import { RemoteContainer, getOrCreateContainerSessionId } from './remote-container-client';
 
 interface WebContainerContext {
@@ -44,8 +45,6 @@ if (!import.meta.env.SSR) {
       })
       .then(async (remoteContainer) => {
         webcontainerContext.loaded = true;
-
-        const { workbenchStore } = await import('~/lib/stores/workbench');
 
         // TODO(phase 2.1) : le script d'inspection (capture des erreurs JS
         // dans l'iframe de preview) n'est pas encore relayé au conteneur
