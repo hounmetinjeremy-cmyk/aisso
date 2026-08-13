@@ -14,16 +14,14 @@ import { createRequestHandler, type ServerBuild } from '@remix-run/cloudflare';
 import { getLoadContext } from '../load-context';
 import { routeToContainer } from './container-router';
 
-// PHASE 2 (containers) : décommenter les 2 imports ci-dessous UNIQUEMENT en
-// même temps que le bloc [[containers]] / [[durable_objects.bindings]] dans
-// wrangler.toml. Tant que ce bloc reste commenté, `@cloudflare/containers`
-// ne doit PAS être importé ici : ce paquet embarque en interne des bouts du
-// CLI `wrangler` (require("sqlite")) que `wrangler deploy` essaie ensuite de
-// bundler dans le worker, ce qui fait échouer le build avec
-// "Could not resolve sqlite".
-//
-// import { getContainer, type Container } from '@cloudflare/containers';
-// export { UserContainer } from '../container/user-container';
+// PHASE 2 (containers) activée : le bloc [[containers]] / [[durable_objects.bindings]]
+// est décommenté dans wrangler.toml. Note historique : `@cloudflare/containers`
+// embarque en interne des bouts du CLI `wrangler` (require("sqlite")), ce qui
+// peut faire échouer le bundling avec "Could not resolve sqlite" selon la
+// version de wrangler/esbuild. Si cette erreur revient, il faudra soit mettre
+// à jour `wrangler`/`@cloudflare/containers`, soit isoler cet import.
+import { getContainer, type Container } from '@cloudflare/containers';
+export { UserContainer } from '../container/user-container';
 
 // Généré par `pnpm run build` (remix vite:build) -> build/server/index.js
 // N'existe qu'après le build, d'où l'erreur TS attendue en local avant un premier build.
@@ -34,11 +32,8 @@ const build = remixServerBuild as unknown as ServerBuild;
 
 const requestHandler = createRequestHandler(build, 'production');
 
-// PHASE 2 : remplacer par l'implémentation réelle utilisant getContainer()
-// une fois les imports ci-dessus réactivés.
-const getContainerForRouter: Parameters<typeof routeToContainer>[2] = () => {
-  throw new Error('Containers non activés (phase 2) : voir workers/app.ts');
-};
+const getContainerForRouter: Parameters<typeof routeToContainer>[2] = (binding, name) =>
+  getContainer(binding as unknown as DurableObjectNamespace<Container>, name);
 
 export default {
   async fetch(request, env, ctx): Promise<Response> {
