@@ -11,7 +11,7 @@
  * fichier correspond, il est servi directement sans exécuter ce Worker).
  */
 import { createRequestHandler, type ServerBuild } from '@remix-run/cloudflare';
-import { getContainer } from '@cloudflare/containers';
+import { getContainer, type Container } from '@cloudflare/containers';
 import { getLoadContext } from '../load-context';
 import { routeToContainer } from './container-router';
 
@@ -28,6 +28,9 @@ const build = remixServerBuild as unknown as ServerBuild;
 
 const requestHandler = createRequestHandler(build, 'production');
 
+const getContainerForRouter: Parameters<typeof routeToContainer>[2] = (binding, name) =>
+  getContainer(binding as unknown as DurableObjectNamespace<Container>, name);
+
 export default {
   async fetch(request, env, ctx): Promise<Response> {
     try {
@@ -36,7 +39,7 @@ export default {
       // Trafic vers le conteneur distant (fs/exec/watch + preview) :
       // /api/container/<sessionId>/... — voir container-router.ts
       if (url.pathname.startsWith('/api/container/')) {
-        return routeToContainer(request, env, getContainer);
+        return routeToContainer(request, env, getContainerForRouter);
       }
 
       const loadContext = getLoadContext({ request, env, ctx });
