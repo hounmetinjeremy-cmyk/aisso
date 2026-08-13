@@ -11,22 +11,18 @@ directory = "./build/client"
 binding = "ASSETS"
 
 # --- Phase 2 : Cloudflare Container pour le terminal/build distant ---
-# Décommenter une fois `container/Dockerfile` prêt et Docker lancé en local
-# (`wrangler deploy` construit et pousse l'image). Voir container/README.md.
-# Après activation : `npx wrangler types` pour régénérer Env avec
-# USER_CONTAINER, puis retirer le commentaire @ts-expect-error au-dessus de
-# `env.USER_CONTAINER` dans workers/container-router.ts.
-#
-# [[containers]]
-# class_name = "UserContainer"
-# image = "./container/Dockerfile"
-# max_instances = 5
-# instance_type = "standard"
-#
-# [[durable_objects.bindings]]
-# name = "USER_CONTAINER"
-# class_name = "UserContainer"
-#
-# [[migrations]]
-# tag = "v1"
-# new_sqlite_classes = ["UserContainer"]
+# Activé : Workers Builds construit l'image Docker côté serveur au déploiement
+# (pas besoin de Docker en local / sur mobile).
+[[containers]]
+class_name = "UserContainer"
+image = "./container/Dockerfile"
+max_instances = 5
+instance_type = "standard"
+
+[[durable_objects.bindings]]
+name = "USER_CONTAINER"
+class_name = "UserContainer"
+
+[[migrations]]
+tag = "v1"
+new_sqlite_classes = ["UserContainer"]
