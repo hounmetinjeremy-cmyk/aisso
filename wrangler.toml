@@ -26,3 +26,4 @@ class_name = "UserContainer"
 [[migrations]]
 tag = "v1"
 new_sqlite_classes = ["UserContainer"]
+# trigger rebuild
