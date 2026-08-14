@@ -8,8 +8,8 @@ import { motion } from 'framer-motion';
 import { classNames } from '~/utils/classNames';
 import { toast } from 'react-toastify';
 import { providerBaseUrlEnvKeys } from '~/utils/constants';
-import { SiGoogle, SiGithub, SiHuggingface, SiPerplexity, SiOpenai } from 'react-icons/si';
-import { BsRobot, BsCloud } from 'react-icons/bs';
+import { SiGoogle, SiGithub, SiHuggingface, SiPerplexity } from 'react-icons/si';
+import { BsRobot, BsCloud, BsOpenai } from 'react-icons/bs';
 import { TbBrain, TbCloudComputing } from 'react-icons/tb';
 import { BiCodeBlock, BiChip } from 'react-icons/bi';
 import { FaAws, FaCloud, FaBrain } from 'react-icons/fa';
@@ -45,7 +45,7 @@ const PROVIDER_ICONS: Record<ProviderName, IconType> = {
   HuggingFace: SiHuggingface,
   Hyperbolic: TbCloudComputing,
   Mistral: TbBrain,
-  OpenAI: SiOpenai,
+  OpenAI: BsOpenai,
   OpenRouter: FaCloud,
   Perplexity: SiPerplexity,
   Together: BsCloud,
