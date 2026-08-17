@@ -2,7 +2,7 @@
 name = "aisso"
 main = "workers/app.ts"
 compatibility_flags = ["nodejs_compat"]
-compatibility_date = "2025-03-28"
+compatibility_date = "2026-08-15"
 send_metrics = false
 
 # --- Hébergement : Worker pur + assets statiques (remplace pages_build_output_dir) ---
@@ -26,4 +26,6 @@ class_name = "UserContainer"
 [[migrations]]
 tag = "v1"
 new_sqlite_classes = ["UserContainer"]
-# trigger rebuild
+# trigger rebuild: try recent compatibility_date to fix wrangler's internal
+# "Could not resolve sqlite" bundling bug (node builtin externalization list
+# may have been updated in newer Workers runtime versions since March 2025).
