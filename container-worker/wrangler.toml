@@ -1,0 +1,24 @@
+#:schema node_modules/wrangler/config-schema.json
+name = "aisso-container"
+main = "src/index.ts"
+compatibility_flags = ["nodejs_compat"]
+compatibility_date = "2025-03-28"
+
+# Worker minuscule et isole, dedie uniquement aux Cloudflare Containers.
+# Ne partage AUCUNE dependance avec le gros Worker principal aisso (IA SDKs,
+# CodeMirror, etc.) -> le bundler wrangler n'a presque rien a empaqueter ici,
+# ce qui evite le bug de bundling rencontre quand @cloudflare/containers est
+# combine avec un tres gros graphe de dependances dans le meme Worker.
+[[containers]]
+class_name = "UserContainer"
+image = "../container/Dockerfile"
+max_instances = 5
+instance_type = "standard"
+
+[[durable_objects.bindings]]
+name = "USER_CONTAINER"
+class_name = "UserContainer"
+
+[[migrations]]
+tag = "v1"
+new_sqlite_classes = ["UserContainer"]
