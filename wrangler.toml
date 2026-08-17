@@ -2,7 +2,7 @@
 name = "aisso"
 main = "workers/app.ts"
 compatibility_flags = ["nodejs_compat"]
-compatibility_date = "2026-08-15"
+compatibility_date = "2025-03-28"
 send_metrics = false
 
 # --- Hébergement : Worker pur + assets statiques (remplace pages_build_output_dir) ---
@@ -26,6 +26,7 @@ class_name = "UserContainer"
 [[migrations]]
 tag = "v1"
 new_sqlite_classes = ["UserContainer"]
-# trigger rebuild: try recent compatibility_date to fix wrangler's internal
-# "Could not resolve sqlite" bundling bug (node builtin externalization list
-# may have been updated in newer Workers runtime versions since March 2025).
+# Combo confirmee fonctionnelle : wrangler 4.44.0 + compatibility_date 2025-03-28
+# (deploiement reussi le 17/08 22:13 UTC). La combo wrangler 4.123.0 + date
+# recente (2026-08-15) plante silencieusement (~9s dans le deploy, probable OOM
+# du bundler wrangler face au tres gros graphe de dependances IA/codemirror).
