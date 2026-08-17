@@ -9,19 +9,13 @@
  * matching + service des fichiers statiques est géré nativement par
  * Cloudflare via le binding [assets] défini dans wrangler.toml : si un
  * fichier correspond, il est servi directement sans exécuter ce Worker).
+ *
+ * Phase 2 (containers) : le trafic /api/container/* est délégué à un
+ * Worker séparé "aisso-container" via Service Binding, plutôt que d'être
+ * géré ici directement — voir container-worker/ pour le pourquoi.
  */
 import { createRequestHandler, type ServerBuild } from '@remix-run/cloudflare';
 import { getLoadContext } from '../load-context';
-import { routeToContainer } from './container-router';
-
-// PHASE 2 (containers) activée : le bloc [[containers]] / [[durable_objects.bindings]]
-// est décommenté dans wrangler.toml. Note historique : `@cloudflare/containers`
-// embarque en interne des bouts du CLI `wrangler` (require("sqlite")), ce qui
-// peut faire échouer le bundling avec "Could not resolve sqlite" selon la
-// version de wrangler/esbuild. Si cette erreur revient, il faudra soit mettre
-// à jour `wrangler`/`@cloudflare/containers`, soit isoler cet import.
-import { getContainer, type Container } from '@cloudflare/containers';
-export { UserContainer } from '../container/user-container';
 
 // Généré par `pnpm run build` (remix vite:build) -> build/server/index.js
 // N'existe qu'après le build, d'où l'erreur TS attendue en local avant un premier build.
@@ -32,18 +26,16 @@ const build = remixServerBuild as unknown as ServerBuild;
 
 const requestHandler = createRequestHandler(build, 'production');
 
-const getContainerForRouter: Parameters<typeof routeToContainer>[2] = (binding, name) =>
-  getContainer(binding as unknown as DurableObjectNamespace<Container>, name);
-
 export default {
   async fetch(request, env, ctx): Promise<Response> {
     try {
       const url = new URL(request.url);
 
       // Trafic vers le conteneur distant (fs/exec/watch + preview) :
-      // /api/container/<sessionId>/... — voir container-router.ts
+      // /api/container/<sessionId>/... — délégué au Worker isolé
+      // "aisso-container" via Service Binding (voir container-worker/).
       if (url.pathname.startsWith('/api/container/')) {
-        return routeToContainer(request, env, getContainerForRouter);
+        return env.CONTAINER_SERVICE.fetch(request);
       }
 
       const loadContext = getLoadContext({ request, env, ctx });
