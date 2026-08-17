@@ -10,23 +10,12 @@ send_metrics = false
 directory = "./build/client"
 binding = "ASSETS"
 
-# --- Phase 2 : Cloudflare Container pour le terminal/build distant ---
-# Activé : Workers Builds construit l'image Docker côté serveur au déploiement
-# (pas besoin de Docker en local / sur mobile).
-[[containers]]
-class_name = "UserContainer"
-image = "./container/Dockerfile"
-max_instances = 5
-instance_type = "standard"
-
-[[durable_objects.bindings]]
-name = "USER_CONTAINER"
-class_name = "UserContainer"
-
-[[migrations]]
-tag = "v1"
-new_sqlite_classes = ["UserContainer"]
-# Combo confirmee fonctionnelle : wrangler 4.44.0 + compatibility_date 2025-03-28
-# (deploiement reussi le 17/08 22:13 UTC). La combo wrangler 4.123.0 + date
-# recente (2026-08-15) plante silencieusement (~9s dans le deploy, probable OOM
-# du bundler wrangler face au tres gros graphe de dependances IA/codemirror).
+# --- Phase 2 : conteneur distant DEPLACE dans un Worker separe (aisso-container) ---
+# Le bloc [[containers]] a ete retire d'ici : combine avec l'enorme graphe de
+# dependances de cette app (IA SDKs, CodeMirror...), il faisait planter le
+# bundler wrangler de facon differente selon la version testee (voir historique
+# des commits). Ce Worker principal parle maintenant au Worker isole
+# "aisso-container" via ce Service Binding.
+[[services]]
+binding = "CONTAINER_SERVICE"
+service = "aisso-container"
