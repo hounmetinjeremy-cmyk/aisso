@@ -13,6 +13,7 @@ import JSZip from 'jszip';
 import fileSaver from 'file-saver';
 import { Octokit, type RestEndpointMethodTypes } from '@octokit/rest';
 import { path } from '~/utils/path';
+import { WORK_DIR } from '~/utils/constants';
 import { extractRelativePath } from '~/utils/diff';
 import { description } from '~/lib/persistence';
 import Cookies from 'js-cookie';
@@ -37,7 +38,10 @@ export type WorkbenchViewType = 'code' | 'diff' | 'preview';
 
 export class WorkbenchStore {
   #previewsStore = new PreviewsStore(webcontainer);
-  #filesStore = new FilesStore(webcontainer);
+
+  // FilesStore est maintenant autonome (aucune dependance a un conteneur payant) :
+  // voir app/lib/stores/files.ts.
+  #filesStore = new FilesStore();
   #editorStore = new EditorStore(this.#filesStore);
   #terminalStore = new TerminalStore(webcontainer);
 
@@ -562,8 +566,8 @@ export class WorkbenchStore {
     }
 
     if (data.action.type === 'file') {
-      const wc = await webcontainer;
-      const fullPath = path.join(wc.workdir, data.action.filePath);
+      // Le chemin complet ne depend plus du conteneur (WORK_DIR est une constante fixe).
+      const fullPath = path.join(WORK_DIR, data.action.filePath);
 
       /*
        * For scoped locks, we would need to implement diff checking here
