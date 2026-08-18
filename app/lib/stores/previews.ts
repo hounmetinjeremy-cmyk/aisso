@@ -1,4 +1,3 @@
-import type { WebContainer } from '@webcontainer/api';
 import { atom } from 'nanostores';
 
 // Extend Window interface to include our custom property
@@ -17,20 +16,29 @@ export interface PreviewInfo {
 // Create a broadcast channel for preview updates
 const PREVIEW_CHANNEL = 'preview-updates';
 
+/**
+ * PreviewsStore : ne depend plus d'un conteneur distant (payant).
+ *
+ * Avant : ecoutait les evenements 'server-ready' / 'port' du conteneur
+ * (emis quand `npm run dev` demarrait un serveur a l'interieur). Comme
+ * aucune commande ne s'execute plus reellement (voir action-runner.ts),
+ * ces evenements ne se produiront jamais : la logique d'ecoute est donc
+ * retiree. La synchronisation multi-onglets (BroadcastChannel) est
+ * conservee, elle ne depend pas du conteneur et reste utile.
+ *
+ * Le premier parametre du constructeur est conserve (mais inutilise) pour
+ * rester compatible avec l'appel existant dans workbench.ts.
+ */
 export class PreviewsStore {
-  #availablePreviews = new Map<number, PreviewInfo>();
-  #webcontainer: Promise<WebContainer>;
   #broadcastChannel?: BroadcastChannel;
   #lastUpdate = new Map<string, number>();
-  #watchedFiles = new Set<string>();
   #refreshTimeouts = new Map<string, NodeJS.Timeout>();
   #REFRESH_DELAY = 300;
   #storageChannel?: BroadcastChannel;
 
   previews = atom<PreviewInfo[]>([]);
 
-  constructor(webcontainerPromise: Promise<WebContainer>) {
-    this.#webcontainer = webcontainerPromise;
+  constructor(_webcontainerPromise: Promise<unknown>) {
     this.#broadcastChannel = this.#maybeCreateChannel(PREVIEW_CHANNEL);
     this.#storageChannel = this.#maybeCreateChannel('storage-sync-channel');
 
@@ -71,8 +79,6 @@ export class PreviewsStore {
         this._broadcastStorageSync();
       };
     }
-
-    this.#init();
   }
 
   #maybeCreateChannel(name: string): BroadcastChannel | undefined {
@@ -166,51 +172,9 @@ export class PreviewsStore {
     }
   }
 
-  async #init() {
-    const webcontainer = await this.#webcontainer;
-
-    // Listen for server ready events
-    webcontainer.on('server-ready', (port, url) => {
-      console.log('[Preview] Server ready on port:', port, url);
-      this.broadcastUpdate(url);
-
-      // Initial storage sync when preview is ready
-      this._broadcastStorageSync();
-    });
-
-    // Listen for port events
-    webcontainer.on('port', (port, type, url) => {
-      let previewInfo = this.#availablePreviews.get(port);
-
-      if (type === 'close' && previewInfo) {
-        this.#availablePreviews.delete(port);
-        this.previews.set(this.previews.get().filter((preview) => preview.port !== port));
-
-        return;
-      }
-
-      const previews = this.previews.get();
-
-      if (!previewInfo) {
-        previewInfo = { port, ready: type === 'open', baseUrl: url };
-        this.#availablePreviews.set(port, previewInfo);
-        previews.push(previewInfo);
-      }
-
-      previewInfo.ready = type === 'open';
-      previewInfo.baseUrl = url;
-
-      this.previews.set([...previews]);
-
-      if (type === 'open') {
-        this.broadcastUpdate(url);
-      }
-    });
-  }
-
   // Helper to extract preview ID from URL
   getPreviewId(url: string): string | null {
-    const match = url.match(/^https?:\/\/([^.]+)\.local-credentialless\.webcontainer-api\.io/);
+    const match = url.match(/^https?:\/\/([^.]+)\.local-credentialless\.webcontainer-api\.io\//);
     return match ? match[1] : null;
   }
 
@@ -302,11 +266,7 @@ let previewsStore: PreviewsStore | null = null;
 
 export function usePreviewStore() {
   if (!previewsStore) {
-    /*
-     * Initialize with a Promise that resolves to WebContainer
-     * This should match how you're initializing WebContainer elsewhere
-     */
-    previewsStore = new PreviewsStore(Promise.resolve({} as WebContainer));
+    previewsStore = new PreviewsStore(Promise.resolve());
   }
 
   return previewsStore;
