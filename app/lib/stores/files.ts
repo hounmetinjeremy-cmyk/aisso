@@ -1,13 +1,10 @@
-import type { PathWatcherEvent, WebContainer } from '@webcontainer/api';
 import { getEncoding } from 'istextorbinary';
 import { map, type MapStore } from 'nanostores';
 import { Buffer } from 'node:buffer';
 import { path } from '~/utils/path';
-import { bufferWatchEvents } from '~/utils/buffer';
 import { WORK_DIR } from '~/utils/constants';
 import { computeFileModifications } from '~/utils/diff';
 import { createScopedLogger } from '~/utils/logger';
-import { unreachable } from '~/utils/unreachable';
 import {
   addLockedFile,
   removeLockedFile,
@@ -21,6 +18,7 @@ import {
   clearCache,
 } from '~/lib/persistence/lockedFiles';
 import { getCurrentChatId } from '~/utils/fileLocks';
+import { logFileChange } from '~/lib/persistence/aisso-supabase';
 
 const logger = createScopedLogger('FilesStore');
 
@@ -44,9 +42,19 @@ type Dirent = File | Folder;
 
 export type FileMap = Record<string, Dirent | undefined>;
 
+/**
+ * Store de fichiers 100% autonome, sans dependance a un conteneur distant.
+ *
+ * Avant : chaque lecture/ecriture passait par `webcontainer.fs.*` (un vrai
+ * systeme de fichiers, local ou distant selon la version). Ceci coutait de
+ * l'argent (Cloudflare Containers est payant) et ajoutait de la latence.
+ *
+ * Maintenant : `this.files` (un store reactif en memoire) EST la source de
+ * verite. Chaque modification est aussi poussee en arriere-plan vers Supabase
+ * (voir aisso-supabase.ts) pour un historique complet et durable, sans jamais
+ * bloquer l'interface en attendant cette sauvegarde.
+ */
 export class FilesStore {
-  #webcontainer: Promise<WebContainer>;
-
   /**
    * Tracks the number of files without folders.
    */
@@ -65,7 +73,7 @@ export class FilesStore {
   #deletedPaths: Set<string> = import.meta.hot?.data.deletedPaths ?? new Set();
 
   /**
-   * Map of files that matches the state of WebContainer.
+   * Map of files that matches the state of the file store (source de verite en memoire).
    */
   files: MapStore<FileMap> = import.meta.hot?.data.files ?? map({});
 
@@ -73,9 +81,7 @@ export class FilesStore {
     return this.#size;
   }
 
-  constructor(webcontainerPromise: Promise<WebContainer>) {
-    this.#webcontainer = webcontainerPromise;
-
+  constructor() {
     // Load deleted paths from localStorage if available
     try {
       if (typeof localStorage !== 'undefined') {
@@ -121,7 +127,7 @@ export class FilesStore {
       observer.observe(document, { subtree: true, childList: true });
     }
 
-    this.#init();
+    this.#cleanupDeletedFiles();
   }
 
   /**
@@ -548,10 +554,8 @@ export class FilesStore {
   }
 
   async saveFile(filePath: string, content: string) {
-    const webcontainer = await this.#webcontainer;
-
     try {
-      const relativePath = path.relative(webcontainer.workdir, filePath);
+      const relativePath = path.relative(WORK_DIR, filePath);
 
       if (!relativePath) {
         throw new Error(`EINVAL: invalid file path, write '${relativePath}'`);
@@ -560,20 +564,19 @@ export class FilesStore {
       const oldContent = this.getFile(filePath)?.content;
 
       if (!oldContent && oldContent !== '') {
-        unreachable('Expected content to be defined');
+        logger.warn(`Expected content to be defined for ${filePath}, proceeding anyway`);
       }
 
-      await webcontainer.fs.writeFile(relativePath, content);
-
       if (!this.#modifiedFiles.has(filePath)) {
-        this.#modifiedFiles.set(filePath, oldContent);
+        this.#modifiedFiles.set(filePath, oldContent ?? '');
       }
 
       // Get the current lock state before updating
       const currentFile = this.files.get()[filePath];
       const isLocked = currentFile?.type === 'file' ? currentFile.isLocked : false;
 
-      // we immediately update the file and don't rely on the `change` event coming from the watcher
+      // Ecriture directe dans le store en memoire : plus de conteneur a payer,
+      // plus de latence reseau, c'est instantane.
       this.files.setKey(filePath, {
         type: 'file',
         content,
@@ -581,58 +584,23 @@ export class FilesStore {
         isLocked,
       });
 
+      if (this.#size === 0 && !currentFile) {
+        this.#size++;
+      }
+
       logger.info('File updated');
+
+      // Sauvegarde en arriere-plan vers Supabase (historique complet, jamais bloquant).
+      void logFileChange(getCurrentChatId(), filePath, content, 'user');
     } catch (error) {
       logger.error('Failed to update file content\n\n', error);
-
       throw error;
     }
   }
 
   async #init() {
-    const webcontainer = await this.#webcontainer;
-
-    // Clean up any files that were previously deleted
+    // Nettoyage des fichiers precedemment supprimes.
     this.#cleanupDeletedFiles();
-
-    // Set up file watcher
-    webcontainer.internal.watchPaths(
-      {
-        include: [`${WORK_DIR}/**`],
-        exclude: ['**/node_modules', '.git', '**/package-lock.json'],
-        includeContent: true,
-      },
-      bufferWatchEvents(100, this.#processEventBuffer.bind(this)),
-    );
-
-    // Get the current chat ID
-    const currentChatId = getCurrentChatId();
-
-    // Migrate any legacy locks to the current chat
-    migrateLegacyLocks(currentChatId);
-
-    // Load locked files immediately for the current chat
-    this.#loadLockedFiles(currentChatId);
-
-    /**
-     * Also set up a timer to load locked files again after a delay.
-     * This ensures that locks are applied even if files are loaded asynchronously.
-     */
-    setTimeout(() => {
-      this.#loadLockedFiles(currentChatId);
-    }, 2000);
-
-    /**
-     * Set up a less frequent periodic check to ensure locks remain applied.
-     * This is now less critical since we have the storage event listener.
-     */
-    setInterval(() => {
-      // Clear the cache to force a fresh read from localStorage
-      clearCache();
-
-      const latestChatId = getCurrentChatId();
-      this.#loadLockedFiles(latestChatId);
-    }, 30000); // Reduced from 10s to 30s
   }
 
   /**
@@ -693,67 +661,6 @@ export class FilesStore {
     }
   }
 
-  #processEventBuffer(events: Array<[events: PathWatcherEvent[]]>) {
-    const watchEvents = events.flat(2);
-
-    for (const { type, path, buffer } of watchEvents) {
-      // remove any trailing slashes
-      const sanitizedPath = path.replace(/\/+$/g, '');
-
-      switch (type) {
-        case 'add_dir': {
-          // we intentionally add a trailing slash so we can distinguish files from folders in the file tree
-          this.files.setKey(sanitizedPath, { type: 'folder' });
-          break;
-        }
-        case 'remove_dir': {
-          this.files.setKey(sanitizedPath, undefined);
-
-          for (const [direntPath] of Object.entries(this.files)) {
-            if (direntPath.startsWith(sanitizedPath)) {
-              this.files.setKey(direntPath, undefined);
-            }
-          }
-
-          break;
-        }
-        case 'add_file':
-        case 'change': {
-          if (type === 'add_file') {
-            this.#size++;
-          }
-
-          let content = '';
-
-          /**
-           * @note This check is purely for the editor. The way we detect this is not
-           * bullet-proof and it's a best guess so there might be false-positives.
-           * The reason we do this is because we don't want to display binary files
-           * in the editor nor allow to edit them.
-           */
-          const isBinary = isBinaryFile(buffer);
-
-          if (!isBinary) {
-            content = this.#decodeFileContent(buffer);
-          }
-
-          this.files.setKey(sanitizedPath, { type: 'file', content, isBinary });
-
-          break;
-        }
-        case 'remove_file': {
-          this.#size--;
-          this.files.setKey(sanitizedPath, undefined);
-          break;
-        }
-        case 'update_directory': {
-          // we don't care about these events
-          break;
-        }
-      }
-    }
-  }
-
   #decodeFileContent(buffer?: Uint8Array) {
     if (!buffer || buffer.byteLength === 0) {
       return '';
@@ -768,26 +675,16 @@ export class FilesStore {
   }
 
   async createFile(filePath: string, content: string | Uint8Array = '') {
-    const webcontainer = await this.#webcontainer;
-
     try {
-      const relativePath = path.relative(webcontainer.workdir, filePath);
+      const relativePath = path.relative(WORK_DIR, filePath);
 
       if (!relativePath) {
         throw new Error(`EINVAL: invalid file path, create '${relativePath}'`);
       }
 
-      const dirPath = path.dirname(relativePath);
-
-      if (dirPath !== '.') {
-        await webcontainer.fs.mkdir(dirPath, { recursive: true });
-      }
-
       const isBinary = content instanceof Uint8Array;
 
       if (isBinary) {
-        await webcontainer.fs.writeFile(relativePath, Buffer.from(content));
-
         const base64Content = Buffer.from(content).toString('base64');
         this.files.setKey(filePath, {
           type: 'file',
@@ -797,19 +694,22 @@ export class FilesStore {
         });
 
         this.#modifiedFiles.set(filePath, base64Content);
+        void logFileChange(getCurrentChatId(), filePath, base64Content, 'ai');
       } else {
         const contentToWrite = (content as string).length === 0 ? ' ' : content;
-        await webcontainer.fs.writeFile(relativePath, contentToWrite);
 
         this.files.setKey(filePath, {
           type: 'file',
-          content: content as string,
+          content: contentToWrite as string,
           isBinary: false,
           isLocked: false,
         });
 
         this.#modifiedFiles.set(filePath, content as string);
+        void logFileChange(getCurrentChatId(), filePath, content as string, 'ai');
       }
+
+      this.#size++;
 
       logger.info(`File created: ${filePath}`);
 
@@ -821,16 +721,12 @@ export class FilesStore {
   }
 
   async createFolder(folderPath: string) {
-    const webcontainer = await this.#webcontainer;
-
     try {
-      const relativePath = path.relative(webcontainer.workdir, folderPath);
+      const relativePath = path.relative(WORK_DIR, folderPath);
 
       if (!relativePath) {
         throw new Error(`EINVAL: invalid folder path, create '${relativePath}'`);
       }
-
-      await webcontainer.fs.mkdir(relativePath, { recursive: true });
 
       this.files.setKey(folderPath, { type: 'folder' });
 
@@ -844,16 +740,12 @@ export class FilesStore {
   }
 
   async deleteFile(filePath: string) {
-    const webcontainer = await this.#webcontainer;
-
     try {
-      const relativePath = path.relative(webcontainer.workdir, filePath);
+      const relativePath = path.relative(WORK_DIR, filePath);
 
       if (!relativePath) {
         throw new Error(`EINVAL: invalid file path, delete '${relativePath}'`);
       }
-
-      await webcontainer.fs.rm(relativePath);
 
       this.#deletedPaths.add(filePath);
 
@@ -868,6 +760,8 @@ export class FilesStore {
 
       logger.info(`File deleted: ${filePath}`);
 
+      void logFileChange(getCurrentChatId(), filePath, null, 'delete');
+
       return true;
     } catch (error) {
       logger.error('Failed to delete file\n\n', error);
@@ -876,16 +770,12 @@ export class FilesStore {
   }
 
   async deleteFolder(folderPath: string) {
-    const webcontainer = await this.#webcontainer;
-
     try {
-      const relativePath = path.relative(webcontainer.workdir, folderPath);
+      const relativePath = path.relative(WORK_DIR, folderPath);
 
       if (!relativePath) {
         throw new Error(`EINVAL: invalid folder path, delete '${relativePath}'`);
       }
-
-      await webcontainer.fs.rm(relativePath, { recursive: true });
 
       this.#deletedPaths.add(folderPath);
 
@@ -930,22 +820,4 @@ export class FilesStore {
       logger.error('Failed to persist deleted paths to localStorage', error);
     }
   }
-}
-
-function isBinaryFile(buffer: Uint8Array | undefined) {
-  if (buffer === undefined) {
-    return false;
-  }
-
-  return getEncoding(convertToBuffer(buffer), { chunkLength: 100 }) === 'binary';
-}
-
-/**
- * Converts a `Uint8Array` into a Node.js `Buffer` by copying the prototype.
- * The goal is to  avoid expensive copies. It does create a new typed array
- * but that's generally cheap as long as it uses the same underlying
- * array buffer.
- */
-function convertToBuffer(view: Uint8Array): Buffer {
-  return Buffer.from(view.buffer, view.byteOffset, view.byteLength);
 }
