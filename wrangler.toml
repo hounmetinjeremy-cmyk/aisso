@@ -10,12 +10,7 @@ send_metrics = false
 directory = "./build/client"
 binding = "ASSETS"
 
-# --- Phase 2 : conteneur distant DEPLACE dans un Worker separe (aisso-container) ---
-# Le bloc [[containers]] a ete retire d'ici : combine avec l'enorme graphe de
-# dependances de cette app (IA SDKs, CodeMirror...), il faisait planter le
-# bundler wrangler de facon differente selon la version testee (voir historique
-# des commits). Ce Worker principal parle maintenant au Worker isole
-# "aisso-container" via ce Service Binding.
-[[services]]
-binding = "CONTAINER_SERVICE"
-service = "aisso-container"
+# --- Conteneurs (payants) totalement retires de l'app le 18/08 : plus aucun
+# Service Binding necessaire ici. Le Worker "aisso-con" (ex-container-worker)
+# n'est donc plus appele par cette app et peut etre supprime sur Cloudflare
+# si besoin, sans impact.
