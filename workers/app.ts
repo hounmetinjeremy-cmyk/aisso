@@ -10,9 +10,8 @@
  * Cloudflare via le binding [assets] défini dans wrangler.toml : si un
  * fichier correspond, il est servi directement sans exécuter ce Worker).
  *
- * Phase 2 (containers) : le trafic /api/container/* est délégué à un
- * Worker séparé "aisso-container" via Service Binding, plutôt que d'être
- * géré ici directement — voir container-worker/ pour le pourquoi.
+ * Conteneurs (payants) totalement retirés le 18/08 : plus de routing vers
+ * un service de conteneur ici.
  */
 import { createRequestHandler, type ServerBuild } from '@remix-run/cloudflare';
 import { getLoadContext } from '../load-context';
@@ -29,15 +28,6 @@ const requestHandler = createRequestHandler(build, 'production');
 export default {
   async fetch(request, env, ctx): Promise<Response> {
     try {
-      const url = new URL(request.url);
-
-      // Trafic vers le conteneur distant (fs/exec/watch + preview) :
-      // /api/container/<sessionId>/... — délégué au Worker isolé
-      // "aisso-container" via Service Binding (voir container-worker/).
-      if (url.pathname.startsWith('/api/container/')) {
-        return env.CONTAINER_SERVICE.fetch(request);
-      }
-
       const loadContext = getLoadContext({ request, env, ctx });
 
       return await requestHandler(request, loadContext);
