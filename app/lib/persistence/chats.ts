@@ -4,6 +4,7 @@
 
 import type { Message } from 'ai';
 import type { IChatMetadata } from './db'; // Import IChatMetadata
+import { logChatMessage } from './aisso-supabase';
 
 export interface ChatMessage {
   id: string;
@@ -87,6 +88,17 @@ export async function saveChat(db: IDBDatabase, chat: Chat): Promise<void> {
     const request = store.put(chat);
 
     request.onsuccess = () => {
+      // Historique complet vers Supabase : on pousse le dernier message
+      // (celui qui vient d'etre ajoute), en arriere-plan, sans jamais
+      // bloquer ni faire echouer la sauvegarde locale.
+      const lastMessage = chat.messages[chat.messages.length - 1];
+
+      if (lastMessage && (lastMessage.role === 'user' || lastMessage.role === 'assistant')) {
+        const content =
+          typeof lastMessage.content === 'string' ? lastMessage.content : JSON.stringify(lastMessage.content);
+        void logChatMessage(chat.id, lastMessage.role, content);
+      }
+
       resolve();
     };
 
