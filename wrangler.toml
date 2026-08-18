@@ -2,7 +2,7 @@
 name = "aisso"
 main = "workers/app.ts"
 compatibility_flags = ["nodejs_compat"]
-compatibility_date = "2025-03-28"
+compatibility_date = "2026-08-15"
 send_metrics = false
 
 # --- Hébergement : Worker pur + assets statiques (remplace pages_build_output_dir) ---
@@ -10,7 +10,5 @@ send_metrics = false
 directory = "./build/client"
 binding = "ASSETS"
 
-# --- Conteneurs (payants) totalement retires de l'app le 18/08 : plus aucun
-# Service Binding necessaire ici. Le Worker "aisso-con" (ex-container-worker)
-# n'est donc plus appele par cette app et peut etre supprime sur Cloudflare
-# si besoin, sans impact.
+# Conteneurs (payants) totalement retires le 18/08. Plus aucun binding
+# lie a un service de conteneur ici.
