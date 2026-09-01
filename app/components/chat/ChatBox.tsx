@@ -8,18 +8,13 @@ import { LOCAL_PROVIDERS } from '~/lib/stores/settings';
 import FilePreview from './FilePreview';
 import { ScreenshotStateManager } from './ScreenshotStateManager';
 import { SendButton } from './SendButton.client';
-import { IconButton } from '~/components/ui/IconButton';
-import { toast } from 'react-toastify';
 import { SpeechRecognitionButton } from '~/components/chat/SpeechRecognition';
-import { SupabaseConnection } from './SupabaseConnection';
 import { ExpoQrModal } from '~/components/workbench/ExpoQrModal';
 import styles from './BaseChat.module.scss';
 import type { ProviderInfo } from '~/types/model';
-import { ColorSchemeDialog } from '~/components/ui/ColorSchemeDialog';
 import type { DesignScheme } from '~/types/design-scheme';
 import type { ElementInfo } from '~/components/workbench/Inspector';
-import { McpTools } from './MCPTools';
-import { WebSearch } from './WebSearch.client';
+import { PlusToolsMenu } from './PlusToolsMenu';
 
 interface ChatBoxProps {
   isModelSettingsCollapsed: boolean;
@@ -251,14 +246,20 @@ export const ChatBox: React.FC<ChatBoxProps> = (props) => {
           </div>
         ) : null}
         <div className="flex flex-wrap items-center gap-1.5 text-sm p-2.5 pt-1.5">
-          {/* Groupe de gauche : pièce jointe + pilule du modèle */}
-          <IconButton
-            title="Upload file"
-            className="rounded-full !p-2 shrink-0"
-            onClick={() => props.handleFileUpload()}
-          >
-            <div className="i-ph:plus-bold text-lg"></div>
-          </IconButton>
+          {/* Groupe de gauche : bouton "+" (regroupe tous les outils secondaires) + pilule du modèle */}
+          <PlusToolsMenu
+            onUploadFile={() => props.handleFileUpload()}
+            designScheme={props.designScheme}
+            setDesignScheme={props.setDesignScheme}
+            onWebSearchResult={(result) => props.onWebSearchResult?.(result)}
+            webSearchDisabled={props.isStreaming}
+            canEnhance={props.input.length > 0 && !props.enhancingPrompt}
+            enhancingPrompt={props.enhancingPrompt}
+            onEnhancePrompt={() => props.enhancePrompt?.()}
+            chatStarted={props.chatStarted}
+            chatMode={props.chatMode}
+            setChatMode={props.setChatMode}
+          />
 
           <button
             type="button"
@@ -275,48 +276,6 @@ export const ChatBox: React.FC<ChatBoxProps> = (props) => {
             <span className="truncate">{props.model || 'Select model'}</span>
             <div className={`i-ph:caret-${props.isModelSettingsCollapsed ? 'down' : 'up'} text-xs shrink-0`} />
           </button>
-
-          {/* Groupe des outils secondaires — compact, passe à la ligne si l'écran est trop étroit */}
-          <div className="flex items-center gap-0.5">
-            <ColorSchemeDialog designScheme={props.designScheme} setDesignScheme={props.setDesignScheme} />
-            <McpTools />
-            <WebSearch onSearchResult={(result) => props.onWebSearchResult?.(result)} disabled={props.isStreaming} />
-            <IconButton
-              title="Enhance prompt"
-              size="lg"
-              disabled={props.input.length === 0 || props.enhancingPrompt}
-              className={classNames('transition-all', props.enhancingPrompt ? 'opacity-100' : '')}
-              onClick={() => {
-                props.enhancePrompt?.();
-                toast.success('Prompt enhanced!');
-              }}
-            >
-              {props.enhancingPrompt ? (
-                <div className="i-svg-spinners:90-ring-with-bg text-bolt-elements-loader-progress text-lg animate-spin"></div>
-              ) : (
-                <div className="i-bolt:stars text-lg"></div>
-              )}
-            </IconButton>
-            {props.chatStarted && (
-              <IconButton
-                title="Discuss"
-                size="lg"
-                className={classNames(
-                  'transition-all flex items-center gap-1 px-1.5',
-                  props.chatMode === 'discuss'
-                    ? '!bg-bolt-elements-item-backgroundAccent !text-bolt-elements-item-contentAccent'
-                    : 'bg-bolt-elements-item-backgroundDefault text-bolt-elements-item-contentDefault',
-                )}
-                onClick={() => {
-                  props.setChatMode?.(props.chatMode === 'discuss' ? 'build' : 'discuss');
-                }}
-              >
-                <div className="i-ph:chats text-lg" />
-                {props.chatMode === 'discuss' ? <span>Discuss</span> : <span />}
-              </IconButton>
-            )}
-            <SupabaseConnection />
-          </div>
 
           {/* Groupe de droite : micro + envoi, toujours ancrés en bout de ligne */}
           <div className="flex items-center gap-1.5 ml-auto shrink-0">
