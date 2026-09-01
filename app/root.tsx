@@ -9,6 +9,7 @@ import { useEffect } from 'react';
 import { DndProvider } from 'react-dnd';
 import { HTML5Backend } from 'react-dnd-html5-backend';
 import { ClientOnly } from 'remix-utils/client-only';
+import { AuthGate } from './components/auth/AuthGate.client';
 import { cssTransition, ToastContainer } from 'react-toastify';
 
 import reactToastifyStyles from 'react-toastify/dist/ReactToastify.css?url';
@@ -146,7 +147,19 @@ export default function App() {
 
   return (
     <Layout>
-      <Outlet />
+      <ClientOnly
+        fallback={
+          <div className="flex items-center justify-center h-full w-full bg-bolt-elements-background-depth-1">
+            <div className="i-svg-spinners:90-ring-with-bg text-2xl text-bolt-elements-textPrimary" />
+          </div>
+        }
+      >
+        {() => (
+          <AuthGate>
+            <Outlet />
+          </AuthGate>
+        )}
+      </ClientOnly>
     </Layout>
   );
 }
