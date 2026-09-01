@@ -47,7 +47,7 @@ function ConnectorRow({ provider, status, loading, connecting, connect, onClose 
   };
 
   return (
-    <div className="flex items-center gap-2.5 px-3 py-1.5 mx-1 text-sm text-bolt-elements-textPrimary">
+    <div className="flex items-center gap-2.5 pl-8 pr-3 py-1.5 mx-1 text-sm text-bolt-elements-textPrimary">
       <div className={classNames(PROVIDER_ICONS[provider], 'text-lg')} />
       <span>{label}</span>
       <div className="ml-auto">
@@ -93,6 +93,7 @@ interface PlusToolsMenuProps {
  */
 export function PlusToolsMenu(props: PlusToolsMenuProps) {
   const [open, setOpen] = useState(false);
+  const [connectorsOpen, setConnectorsOpen] = useState(false);
   const menuRef = useRef<HTMLDivElement>(null);
   const {
     status: connectedStatus,
@@ -215,14 +216,6 @@ export function PlusToolsMenu(props: PlusToolsMenuProps) {
           </div>
 
           <div className="flex items-center gap-2.5 px-3 py-1.5 mx-1 text-sm text-bolt-elements-textPrimary">
-            <div className="i-ph:plugs-connected text-lg" />
-            <span>Outils MCP</span>
-            <div className="ml-auto">
-              <McpTools />
-            </div>
-          </div>
-
-          <div className="flex items-center gap-2.5 px-3 py-1.5 mx-1 text-sm text-bolt-elements-textPrimary">
             <div className="i-ph:globe text-lg" />
             <span>Recherche Web</span>
             <div className="ml-auto">
@@ -230,32 +223,57 @@ export function PlusToolsMenu(props: PlusToolsMenuProps) {
             </div>
           </div>
 
-          <div className="flex items-center gap-2.5 px-3 py-1.5 mx-1 text-sm text-bolt-elements-textPrimary">
-            <div className="i-ph:database text-lg" />
-            <span>Supabase</span>
-            <div className="ml-auto">
-              <SupabaseConnection />
-            </div>
-          </div>
-
           <div className="h-px bg-bolt-elements-borderColor my-1 mx-2" />
 
-          <ConnectorRow
-            provider="github"
-            status={connectedStatus}
-            loading={connectedLoading}
-            connecting={connectingProvider}
-            connect={connectProvider}
-            onClose={close}
-          />
-          <ConnectorRow
-            provider="vercel"
-            status={connectedStatus}
-            loading={connectedLoading}
-            connecting={connectingProvider}
-            connect={connectProvider}
-            onClose={close}
-          />
+          {/* Tous les connecteurs (MCP, Supabase, GitHub, Vercel) regroupés
+              sous une seule entrée, comme la section "Connecteurs" de
+              l'app Claude, au lieu d'être étalés à plat dans ce menu. */}
+          <button
+            type="button"
+            className="flex items-center gap-2.5 px-3 py-2 text-sm text-bolt-elements-textPrimary hover:bg-bolt-elements-item-backgroundActive rounded-md mx-1"
+            onClick={() => setConnectorsOpen((v) => !v)}
+          >
+            <div className="i-ph:plugs-connected text-lg" />
+            <span>Connecteurs</span>
+            <div className={classNames('i-ph:caret-down text-sm ml-auto transition-transform', connectorsOpen ? 'rotate-180' : '')} />
+          </button>
+
+          {connectorsOpen && (
+            <div className="flex flex-col gap-0.5">
+              <div className="flex items-center gap-2.5 pl-8 pr-3 py-1.5 mx-1 text-sm text-bolt-elements-textPrimary">
+                <div className="i-ph:wrench text-lg" />
+                <span>Outils MCP</span>
+                <div className="ml-auto">
+                  <McpTools />
+                </div>
+              </div>
+
+              <div className="flex items-center gap-2.5 pl-8 pr-3 py-1.5 mx-1 text-sm text-bolt-elements-textPrimary">
+                <div className="i-ph:database text-lg" />
+                <span>Supabase</span>
+                <div className="ml-auto">
+                  <SupabaseConnection />
+                </div>
+              </div>
+
+              <ConnectorRow
+                provider="github"
+                status={connectedStatus}
+                loading={connectedLoading}
+                connecting={connectingProvider}
+                connect={connectProvider}
+                onClose={close}
+              />
+              <ConnectorRow
+                provider="vercel"
+                status={connectedStatus}
+                loading={connectedLoading}
+                connecting={connectingProvider}
+                connect={connectProvider}
+                onClose={close}
+              />
+            </div>
+          )}
         </div>
       )}
     </div>
