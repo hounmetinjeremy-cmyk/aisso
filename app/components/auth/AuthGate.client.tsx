@@ -1,9 +1,8 @@
 import { useEffect, useState, type ReactNode } from 'react';
-import { GoogleAuthProvider, getRedirectResult, signInWithPopup, signInWithRedirect } from 'firebase/auth';
+import { GoogleAuthProvider, getRedirectResult, signInWithPopup } from 'firebase/auth';
 
 import { auth } from '~/lib/firebase.client';
 import { useAuth } from '~/lib/hooks/useAuth.client';
-import { isMobile } from '~/utils/mobile';
 
 const googleProvider = new GoogleAuthProvider();
 
@@ -66,41 +65,20 @@ function LoginScreen({ initialError }: { initialError?: string | null }) {
     setBusy(true);
 
     /*
-     * Sur mobile, les popups sont fermées trop tôt par le navigateur/OS bien avant la fin
-     * de la connexion (Firebase renvoie alors "popup-closed-by-user" à tort) : on part
-     * directement en redirection plein écran, plus fiable sur téléphone.
+     * La redirection plein écran (signInWithRedirect) reste bloquée en silence au retour
+     * sur ce domaine (aisso-d9de3.firebaseapp.com ≠ domaine réel du site *.workers.dev —
+     * confirmé en test réel : plusieurs tentatives, toutes restées bloquées, jamais
+     * d'erreur). Tant qu'il n'y a pas de domaine d'authentification personnalisé (comme
+     * auth.formoney.site pour Center), la popup reste le seul chemin fiable, même sur
+     * mobile — un échec de popup redonne juste la main pour réessayer, plutôt que de
+     * retomber sur la redirection qu'on sait cassée ici.
      */
-    if (isMobile()) {
-      try {
-        await signInWithRedirect(auth, googleProvider);
-      } catch (err) {
-        setError(messageFrom(err));
-        setBusy(false);
-      }
-
-      return;
-    }
-
     try {
       await signInWithPopup(auth, googleProvider);
-      setBusy(false);
     } catch (err) {
-      const code = (err as { code?: string })?.code ?? '';
-
-      // Une vraie erreur de config (domaine non autorisé, réseau...) : la redirection échouerait pareil, inutile de réessayer.
-      if (code === 'auth/unauthorized-domain' || code === 'auth/network-request-failed') {
-        setError(messageFrom(err));
-        setBusy(false);
-        return;
-      }
-
-      // Tout autre échec de popup (bloquée, fermée trop tôt, non supportée...) : on retente en redirection.
-      try {
-        await signInWithRedirect(auth, googleProvider);
-      } catch (redirectError) {
-        setError(messageFrom(redirectError));
-        setBusy(false);
-      }
+      setError(messageFrom(err));
+    } finally {
+      setBusy(false);
     }
   };
 
