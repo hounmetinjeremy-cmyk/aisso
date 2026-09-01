@@ -25,5 +25,6 @@ interface Env {
   GITHUB_OAUTH_CLIENT_SECRET: string;
   VERCEL_OAUTH_CLIENT_ID: string;
   VERCEL_OAUTH_CLIENT_SECRET: string;
+  VERCEL_INTEGRATION_SLUG: string;
   APP_BASE_URL: string;
 }

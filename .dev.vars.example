@@ -58,5 +58,9 @@ GITHUB_OAUTH_CLIENT_SECRET=
 
 # Intégration Vercel (vercel.com/dashboard/integrations/console).
 # Callback URL à déclarer : ${APP_BASE_URL}/api/connect/vercel/callback
+# VERCEL_INTEGRATION_SLUG = le "URL Slug" choisi lors de la création de
+# l'intégration (vercel.com/integrations/<slug>) : l'autorisation démarre
+# sur vercel.com/integrations/<slug>/new, propre à chaque intégration.
 VERCEL_OAUTH_CLIENT_ID=
 VERCEL_OAUTH_CLIENT_SECRET=
+VERCEL_INTEGRATION_SLUG=

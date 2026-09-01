@@ -80,36 +80,31 @@ class GitHubOAuthProvider implements OAuthProvider {
 }
 
 /**
- * ⚠️ Vercel expose son flux OAuth via la console "Integrations" (chaque
- * intégration a son propre slug + ses propres URLs d'autorisation, distinctes
- * d'un simple couple client_id/client_secret classique). Tant que
- * l'intégration n'est pas créée côté Vercel, on ne peut pas connaître l'URL
- * exacte à utiliser — ce provider lève donc une erreur claire plutôt que de
- * deviner une URL qui pourrait être fausse. Une fois l'intégration créée
- * (vercel.com/dashboard/integrations/console), Vercel affiche l'URL
- * d'autorisation réelle et le point d'échange du "code" : il suffira de les
- * coller ici.
+ * Vercel expose son flux OAuth via la console "Integrations" : chaque
+ * intégration a un "slug" et l'autorisation démarre sur
+ * vercel.com/integrations/<slug>/new (pas sur un endpoint générique
+ * vercel.com/oauth/authorize — testé en réel, celui-ci renvoie "App ID is
+ * invalid" pour un client_id issu de la Integration Console). Ce flux
+ * "install" ne prend pas client_id/redirect_uri en paramètres : Vercel
+ * connaît déjà la Redirect URL configurée sur l'intégration elle-même, on
+ * transmet juste le state pour le round-trip CSRF.
  */
 class VercelOAuthProvider implements OAuthProvider {
   constructor(
     private clientId: string,
     private clientSecret: string,
+    private integrationSlug: string,
   ) {}
 
-  buildAuthorizeUrl({ redirectUri, state }: { redirectUri: string; state: string }): string {
-    if (!this.clientId) {
+  buildAuthorizeUrl({ state }: { redirectUri: string; state: string }): string {
+    if (!this.clientId || !this.integrationSlug) {
       throw new Error(
-        "Intégration Vercel pas encore configurée : crée une intégration sur vercel.com/dashboard/integrations/console, " +
-          'récupère son URL d\'autorisation exacte et son client_id/secret, puis mets à jour VercelOAuthProvider.',
+        "Intégration Vercel pas encore configurée : crée-la sur vercel.com/dashboard/integrations/console, " +
+          'puis renseigne VERCEL_OAUTH_CLIENT_ID, VERCEL_OAUTH_CLIENT_SECRET et VERCEL_INTEGRATION_SLUG.',
       );
     }
 
-    // Forme standard OAuth2 — à ajuster si la console Vercel donne une URL
-    // différente pour cette intégration précise.
-    const url = new URL('https://vercel.com/oauth/authorize');
-    url.searchParams.set('client_id', this.clientId);
-    url.searchParams.set('redirect_uri', redirectUri);
-    url.searchParams.set('response_type', 'code');
+    const url = new URL(`https://vercel.com/integrations/${this.integrationSlug}/new`);
     url.searchParams.set('state', state);
 
     return url.toString();
@@ -147,7 +142,7 @@ export function getOAuthProvider(provider: string, env: Env): OAuthProvider {
   }
 
   if (provider === 'vercel') {
-    return new VercelOAuthProvider(env.VERCEL_OAUTH_CLIENT_ID, env.VERCEL_OAUTH_CLIENT_SECRET);
+    return new VercelOAuthProvider(env.VERCEL_OAUTH_CLIENT_ID, env.VERCEL_OAUTH_CLIENT_SECRET, env.VERCEL_INTEGRATION_SLUG);
   }
 
   throw new Error(`Fournisseur OAuth inconnu : ${provider}`);
