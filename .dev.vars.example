@@ -41,3 +41,22 @@ NODE_ENV=
 PORT=
 VITE_LOG_LEVEL=
 DEFAULT_NUM_CTX=
+
+# Clé service_role Supabase (Project Settings > API) — contourne les policies
+# RLS, sert côté serveur uniquement pour les snapshots vérifiés et les
+# connexions GitHub/Vercel des utilisateurs. Ne jamais exposer au client.
+SUPABASE_SERVICE_ROLE_KEY=
+
+# Domaine réel du déploiement (ex: https://aisso.hounmetinjeremy.workers.dev),
+# utilisé pour construire les URLs de redirection OAuth.
+APP_BASE_URL=
+
+# App OAuth GitHub (github.com/settings/developers > New OAuth App).
+# Callback URL à déclarer : ${APP_BASE_URL}/api/connect/github/callback
+GITHUB_OAUTH_CLIENT_ID=
+GITHUB_OAUTH_CLIENT_SECRET=
+
+# Intégration Vercel (vercel.com/dashboard/integrations/console).
+# Callback URL à déclarer : ${APP_BASE_URL}/api/connect/vercel/callback
+VERCEL_OAUTH_CLIENT_ID=
+VERCEL_OAUTH_CLIENT_SECRET=

@@ -20,4 +20,10 @@ interface Env {
   PERPLEXITY_API_KEY: string;
   AWS_BEDROCK_CONFIG: string;
   USER_CONTAINER: DurableObjectNamespace;
+  SUPABASE_SERVICE_ROLE_KEY: string;
+  GITHUB_OAUTH_CLIENT_ID: string;
+  GITHUB_OAUTH_CLIENT_SECRET: string;
+  VERCEL_OAUTH_CLIENT_ID: string;
+  VERCEL_OAUTH_CLIENT_SECRET: string;
+  APP_BASE_URL: string;
 }
