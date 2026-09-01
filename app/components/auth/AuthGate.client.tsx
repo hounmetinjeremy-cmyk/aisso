@@ -3,6 +3,7 @@ import { GoogleAuthProvider, getRedirectResult, signInWithPopup, signInWithRedir
 
 import { auth } from '~/lib/firebase.client';
 import { useAuth } from '~/lib/hooks/useAuth.client';
+import { isMobile } from '~/utils/mobile';
 
 const googleProvider = new GoogleAuthProvider();
 
@@ -64,23 +65,42 @@ function LoginScreen() {
     setError(null);
     setBusy(true);
 
+    /*
+     * Sur mobile, les popups sont fermées trop tôt par le navigateur/OS bien avant la fin
+     * de la connexion (Firebase renvoie alors "popup-closed-by-user" à tort) : on part
+     * directement en redirection plein écran, plus fiable sur téléphone.
+     */
+    if (isMobile()) {
+      try {
+        await signInWithRedirect(auth, googleProvider);
+      } catch (err) {
+        setError(messageFrom(err));
+        setBusy(false);
+      }
+
+      return;
+    }
+
     try {
       await signInWithPopup(auth, googleProvider);
+      setBusy(false);
     } catch (err) {
       const code = (err as { code?: string })?.code ?? '';
 
-      if (code === 'auth/popup-blocked' || code === 'auth/operation-not-supported-in-this-environment') {
-        try {
-          await signInWithRedirect(auth, googleProvider);
-          return;
-        } catch (redirectError) {
-          setError(messageFrom(redirectError));
-        }
-      } else {
+      // Une vraie erreur de config (domaine non autorisé, réseau...) : la redirection échouerait pareil, inutile de réessayer.
+      if (code === 'auth/unauthorized-domain' || code === 'auth/network-request-failed') {
         setError(messageFrom(err));
+        setBusy(false);
+        return;
       }
-    } finally {
-      setBusy(false);
+
+      // Tout autre échec de popup (bloquée, fermée trop tôt, non supportée...) : on retente en redirection.
+      try {
+        await signInWithRedirect(auth, googleProvider);
+      } catch (redirectError) {
+        setError(messageFrom(redirectError));
+        setBusy(false);
+      }
     }
   };
 
