@@ -1,13 +1,76 @@
 import { useEffect, useState, type ReactNode } from 'react';
-import { GoogleAuthProvider, getRedirectResult, signInWithPopup, signInWithRedirect } from 'firebase/auth';
+import {
+  GoogleAuthProvider,
+  getRedirectResult,
+  signInWithCredential,
+  signInWithPopup,
+  signInWithRedirect,
+} from 'firebase/auth';
 
 import { auth } from '~/lib/firebase.client';
 import { useAuth } from '~/lib/hooks/useAuth.client';
+
+// "ID client Web" généré par Firebase (Authentication > Méthode de connexion > Google).
+const GOOGLE_WEB_CLIENT_ID = '545417768480-mrjg6n07jlh3n2n3ipifa66km7km6iei.apps.googleusercontent.com';
 
 const googleProvider = new GoogleAuthProvider();
 
 // Force l'écran de sélection de compte : l'utilisateur choisit son Gmail à chaque connexion.
 googleProvider.setCustomParameters({ prompt: 'select_account' });
+
+interface GsiMoment {
+  isNotDisplayed: () => boolean;
+  isSkippedMoment: () => boolean;
+  isDismissedMoment: () => boolean;
+}
+
+declare global {
+  interface Window {
+    google?: {
+      accounts: {
+        id: {
+          initialize: (config: {
+            client_id: string;
+            callback: (response: { credential: string }) => void;
+          }) => void;
+          prompt: (momentListener?: (notification: GsiMoment) => void) => void;
+        };
+      };
+    };
+  }
+}
+
+let gsiScriptPromise: Promise<void> | null = null;
+
+/*
+ * Google Identity Services (FedCM) authentifie directement sur accounts.google.com, sans
+ * jamais transiter par le domaine Firebase (aisso-d9de3.firebaseapp.com). Ça évite le
+ * blocage de stockage partitionné entre domaines qui casse la popup et la redirection
+ * Firebase classiques sur mobile (confirmé en test réel : popup et redirection échouent
+ * toutes les deux avec le vrai code déployé, config Firebase pourtant correcte).
+ */
+function loadGoogleIdentityServices(): Promise<void> {
+  if (gsiScriptPromise) {
+    return gsiScriptPromise;
+  }
+
+  gsiScriptPromise = new Promise((resolve, reject) => {
+    if (window.google?.accounts?.id) {
+      resolve();
+      return;
+    }
+
+    const script = document.createElement('script');
+    script.src = 'https://accounts.google.com/gsi/client';
+    script.async = true;
+    script.defer = true;
+    script.onload = () => resolve();
+    script.onerror = () => reject(new Error('gsi-load-failed'));
+    document.head.appendChild(script);
+  });
+
+  return gsiScriptPromise;
+}
 
 function readableError(code: string, fallback: string) {
   switch (code) {
@@ -60,10 +123,26 @@ function LoginScreen({ initialError }: { initialError?: string | null }) {
     getRedirectResult(auth).catch((err) => setError(messageFrom(err)));
   }, []);
 
-  const signInWithGoogle = async () => {
-    setError(null);
-    setBusy(true);
+  useEffect(() => {
+    loadGoogleIdentityServices()
+      .then(() => {
+        window.google?.accounts.id.initialize({
+          client_id: GOOGLE_WEB_CLIENT_ID,
+          callback: (response) => {
+            const credential = GoogleAuthProvider.credential(response.credential);
+            signInWithCredential(auth, credential).catch((err) => {
+              setError(messageFrom(err));
+              setBusy(false);
+            });
+          },
+        });
+      })
+      .catch(() => {
+        // Google Identity Services indisponible : le bouton retombera sur popup/redirection Firebase.
+      });
+  }, []);
 
+  const signInWithFirebaseFallback = async () => {
     try {
       await signInWithPopup(auth, googleProvider);
       setBusy(false);
@@ -92,6 +171,25 @@ function LoginScreen({ initialError }: { initialError?: string | null }) {
         setError(messageFrom(err));
         setBusy(false);
       }
+    }
+  };
+
+  const signInWithGoogle = () => {
+    setError(null);
+    setBusy(true);
+
+    if (window.google?.accounts?.id) {
+      window.google.accounts.id.prompt((notification) => {
+        if (notification.isNotDisplayed() || notification.isSkippedMoment()) {
+          // FedCM/One Tap indisponible dans ce navigateur : on retombe sur Firebase.
+          void signInWithFirebaseFallback();
+        } else if (notification.isDismissedMoment()) {
+          setError('Connexion Google annulée.');
+          setBusy(false);
+        }
+      });
+    } else {
+      void signInWithFirebaseFallback();
     }
   };
 
