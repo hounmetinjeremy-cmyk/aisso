@@ -8,6 +8,7 @@ import { SettingsButton, HelpButton } from '~/components/ui/SettingsButton';
 import { IconButton } from '~/components/ui/IconButton';
 import { Button } from '~/components/ui/Button';
 import { useAuth } from '~/lib/hooks/useAuth.client';
+import { useConnectedAccounts, type OAuthProviderId } from '~/lib/hooks/useConnectedAccounts.client';
 import { db, deleteById, getAll, chatId, type ChatHistoryItem, useChatHistory } from '~/lib/persistence';
 import { cubicEasingFn } from '~/utils/easings';
 import { HistoryItem } from './HistoryItem';
@@ -62,6 +63,82 @@ function CurrentDateTime() {
         <span>{dateTime.toLocaleDateString()}</span>
         <span>{dateTime.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}</span>
       </div>
+    </div>
+  );
+}
+
+const PROVIDER_LABELS: Record<OAuthProviderId, string> = {
+  github: 'GitHub',
+  vercel: 'Vercel',
+};
+
+function ConnectedAccounts() {
+  const { status, loading, connecting, connect, refresh } = useConnectedAccounts();
+
+  // Après le retour du callback OAuth (?connected=github ou ?connect_error=...) :
+  // notifie l'utilisateur, rafraîchit le statut, puis nettoie l'URL.
+  useEffect(() => {
+    const params = new URLSearchParams(window.location.search);
+    const connected = params.get('connected');
+    const connectError = params.get('connect_error');
+
+    if (!connected && !connectError) {
+      return;
+    }
+
+    if (connected) {
+      toast.success(`${PROVIDER_LABELS[connected as OAuthProviderId] ?? connected} connecté avec succès.`);
+      void refresh();
+    } else if (connectError) {
+      toast.error(`Connexion échouée : ${connectError}`);
+    }
+
+    params.delete('connected');
+    params.delete('connect_error');
+
+    const next = `${window.location.pathname}${params.toString() ? `?${params}` : ''}`;
+    window.history.replaceState({}, '', next);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
+  const handleConnect = (provider: OAuthProviderId) => {
+    connect(provider).catch((error) => {
+      toast.error(error instanceof Error ? error.message : 'Connexion impossible.');
+    });
+  };
+
+  return (
+    <div className="px-4 py-3 border-b border-gray-100 dark:border-gray-800/50 space-y-2">
+      <div className="text-xs font-medium text-gray-500 dark:text-gray-400">Comptes connectés</div>
+      {(['github', 'vercel'] as const).map((provider) => {
+        const isConnected = provider === 'github' ? status.github : status.vercel;
+        const label =
+          provider === 'github' && status.githubUsername ? `@${status.githubUsername}` : PROVIDER_LABELS[provider];
+
+        return (
+          <div key={provider} className="flex items-center justify-between text-sm">
+            <span className="flex items-center gap-2 text-gray-700 dark:text-gray-300">
+              <span className={provider === 'github' ? 'i-ph:github-logo-fill' : 'i-ph:triangle-fill'} />
+              {label}
+            </span>
+            {isConnected ? (
+              <span className="flex items-center gap-1 text-green-600 dark:text-green-400 text-xs">
+                <span className="i-ph:check-circle-fill" />
+                Connecté
+              </span>
+            ) : (
+              <button
+                type="button"
+                onClick={() => handleConnect(provider)}
+                disabled={loading || connecting === provider}
+                className="text-xs font-medium px-2.5 py-1 rounded-md bg-purple-50 dark:bg-purple-500/10 text-purple-700 dark:text-purple-300 hover:bg-purple-100 dark:hover:bg-purple-500/20 transition-colors disabled:opacity-60"
+              >
+                {connecting === provider ? 'Connexion...' : 'Connecter'}
+              </button>
+            )}
+          </div>
+        );
+      })}
     </div>
   );
 }
@@ -369,6 +446,7 @@ export const Menu = () => {
           </div>
         </div>
         <CurrentDateTime />
+        {authUser && <ConnectedAccounts />}
         <div className="flex-1 flex flex-col h-full w-full overflow-hidden">
           <div className="p-4 space-y-3">
             <div className="flex gap-2">
