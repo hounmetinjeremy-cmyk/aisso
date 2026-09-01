@@ -3,7 +3,7 @@ import { useAuth } from './useAuth.client';
 
 export type OAuthProviderId = 'github' | 'vercel';
 
-interface ConnectedAccountsStatus {
+export interface ConnectedAccountsStatus {
   github: boolean;
   githubUsername: string | null;
   vercel: boolean;

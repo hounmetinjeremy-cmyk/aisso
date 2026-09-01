@@ -6,7 +6,70 @@ import { ColorSchemeDialog } from '~/components/ui/ColorSchemeDialog';
 import { McpTools } from './MCPTools';
 import { WebSearch } from './WebSearch.client';
 import { SupabaseConnection } from './SupabaseConnection';
+import { useConnectedAccounts, type OAuthProviderId, type ConnectedAccountsStatus } from '~/lib/hooks/useConnectedAccounts.client';
 import type { DesignScheme } from '~/types/design-scheme';
+
+const PROVIDER_LABELS: Record<OAuthProviderId, string> = {
+  github: 'GitHub',
+  vercel: 'Vercel',
+};
+
+const PROVIDER_ICONS: Record<OAuthProviderId, string> = {
+  github: 'i-ph:github-logo-fill',
+  vercel: 'i-ph:triangle-fill',
+};
+
+/*
+ * Statut + bouton "Connecter" pour un fournisseur OAuth (GitHub/Vercel), au
+ * même endroit que les autres connecteurs (MCP, Supabase) dans ce menu, à la
+ * manière du panneau "Ajouter au chat" de Claude qui liste tous les
+ * connecteurs à un seul endroit.
+ */
+interface ConnectorRowProps {
+  provider: OAuthProviderId;
+  status: ConnectedAccountsStatus;
+  loading: boolean;
+  connecting: OAuthProviderId | null;
+  connect: (provider: OAuthProviderId) => Promise<void>;
+  onClose: () => void;
+}
+
+function ConnectorRow({ provider, status, loading, connecting, connect, onClose }: ConnectorRowProps) {
+  const isConnected = provider === 'github' ? status.github : status.vercel;
+  const label = provider === 'github' && status.githubUsername ? `@${status.githubUsername}` : PROVIDER_LABELS[provider];
+
+  const handleConnect = () => {
+    connect(provider)
+      .then(() => onClose())
+      .catch((error) => {
+        toast.error(error instanceof Error ? error.message : 'Connexion impossible.');
+      });
+  };
+
+  return (
+    <div className="flex items-center gap-2.5 px-3 py-1.5 mx-1 text-sm text-bolt-elements-textPrimary">
+      <div className={classNames(PROVIDER_ICONS[provider], 'text-lg')} />
+      <span>{label}</span>
+      <div className="ml-auto">
+        {isConnected ? (
+          <span className="flex items-center gap-1 text-green-600 dark:text-green-400 text-xs">
+            <span className="i-ph:check-circle-fill" />
+            Connecté
+          </span>
+        ) : (
+          <button
+            type="button"
+            onClick={handleConnect}
+            disabled={loading || connecting === provider}
+            className="text-xs font-medium px-2.5 py-1 rounded-md bg-purple-50 dark:bg-purple-500/10 text-purple-700 dark:text-purple-300 hover:bg-purple-100 dark:hover:bg-purple-500/20 transition-colors disabled:opacity-60"
+          >
+            {connecting === provider ? 'Connexion...' : 'Connecter'}
+          </button>
+        )}
+      </div>
+    </div>
+  );
+}
 
 interface PlusToolsMenuProps {
   onUploadFile: () => void;
@@ -31,6 +94,13 @@ interface PlusToolsMenuProps {
 export function PlusToolsMenu(props: PlusToolsMenuProps) {
   const [open, setOpen] = useState(false);
   const menuRef = useRef<HTMLDivElement>(null);
+  const {
+    status: connectedStatus,
+    loading: connectedLoading,
+    connecting: connectingProvider,
+    connect: connectProvider,
+    refresh: refreshConnectedAccounts,
+  } = useConnectedAccounts();
 
   useEffect(() => {
     if (!open) {
@@ -47,6 +117,32 @@ export function PlusToolsMenu(props: PlusToolsMenuProps) {
 
     return () => document.removeEventListener('mousedown', handleOutsideClick);
   }, [open]);
+
+  // Après le retour du callback OAuth (?connected=github ou ?connect_error=...) :
+  // notifie l'utilisateur, rafraîchit le statut, puis nettoie l'URL.
+  useEffect(() => {
+    const params = new URLSearchParams(window.location.search);
+    const connected = params.get('connected');
+    const connectError = params.get('connect_error');
+
+    if (!connected && !connectError) {
+      return;
+    }
+
+    if (connected) {
+      toast.success(`${PROVIDER_LABELS[connected as OAuthProviderId] ?? connected} connecté avec succès.`);
+      void refreshConnectedAccounts();
+    } else if (connectError) {
+      toast.error(`Connexion échouée : ${connectError}`);
+    }
+
+    params.delete('connected');
+    params.delete('connect_error');
+
+    const next = `${window.location.pathname}${params.toString() ? `?${params}` : ''}`;
+    window.history.replaceState({}, '', next);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
 
   const close = () => setOpen(false);
 
@@ -141,6 +237,25 @@ export function PlusToolsMenu(props: PlusToolsMenuProps) {
               <SupabaseConnection />
             </div>
           </div>
+
+          <div className="h-px bg-bolt-elements-borderColor my-1 mx-2" />
+
+          <ConnectorRow
+            provider="github"
+            status={connectedStatus}
+            loading={connectedLoading}
+            connecting={connectingProvider}
+            connect={connectProvider}
+            onClose={close}
+          />
+          <ConnectorRow
+            provider="vercel"
+            status={connectedStatus}
+            loading={connectedLoading}
+            connecting={connectingProvider}
+            connect={connectProvider}
+            onClose={close}
+          />
         </div>
       )}
     </div>
