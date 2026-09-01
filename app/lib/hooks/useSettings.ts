@@ -177,7 +177,7 @@ export function useSettings(): UseSettingsReturn {
     Object.keys(providers).forEach((provider) => {
       providerSetting[provider] = providers[provider].settings;
     });
-    Cookies.set('providers', JSON.stringify(providerSetting));
+    Cookies.set('providers', JSON.stringify(providerSetting), { expires: 365 });
   }, [providers]);
 
   return {

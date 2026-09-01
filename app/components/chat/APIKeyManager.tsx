@@ -80,7 +80,10 @@ export const APIKeyManager: React.FC<APIKeyManagerProps> = ({ provider, apiKey, 
     // Save to cookies
     const currentKeys = getApiKeysFromCookies();
     const newKeys = { ...currentKeys, [provider.name]: tempKey };
-    Cookies.set('apiKeys', JSON.stringify(newKeys));
+    // Sans `expires`, js-cookie crée un cookie de session qui disparaît à la
+    // fermeture du navigateur (souvent immédiat sur mobile), obligeant à
+    // retaper la clé à chaque visite.
+    Cookies.set('apiKeys', JSON.stringify(newKeys), { expires: 365 });
 
     setIsEditing(false);
   };

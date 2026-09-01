@@ -30,7 +30,7 @@ import type { DesignScheme } from '~/types/design-scheme';
 import type { ElementInfo } from '~/components/workbench/Inspector';
 import LlmErrorAlert from './LLMApiAlert';
 
-const TEXTAREA_MIN_HEIGHT = 48;
+const TEXTAREA_MIN_HEIGHT = 36;
 
 interface BaseChatProps {
   textareaRef?: React.RefObject<HTMLTextAreaElement> | undefined;
@@ -227,7 +227,7 @@ export const BaseChat = React.forwardRef<HTMLDivElement, BaseChatProps>(
     const onApiKeysChange = async (providerName: string, apiKey: string) => {
       const newApiKeys = { ...apiKeys, [providerName]: apiKey };
       setApiKeys(newApiKeys);
-      Cookies.set('apiKeys', JSON.stringify(newApiKeys));
+      Cookies.set('apiKeys', JSON.stringify(newApiKeys), { expires: 365 });
 
       setIsModelLoading(providerName);
 
