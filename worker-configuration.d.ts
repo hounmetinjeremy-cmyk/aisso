@@ -1,5 +1,9 @@
 interface Env {
   RUNNING_IN_DOCKER: Settings;
+  // Clé service_role Supabase (jamais exposée au client) — utilisée par
+  // api.snapshot.$chatId pour sauvegarder les projets après vérification
+  // du jeton Firebase.
+  SUPABASE_SERVICE_ROLE_KEY: string;
   DEFAULT_NUM_CTX: Settings;
   ANTHROPIC_API_KEY: string;
   OPENAI_API_KEY: string;

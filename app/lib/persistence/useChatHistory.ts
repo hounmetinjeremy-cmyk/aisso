@@ -13,10 +13,9 @@ import {
   setMessages,
   duplicateChat,
   createChatFromMessages,
-  getSnapshot,
-  setSnapshot,
   type IChatMetadata,
 } from './db';
+import { getRemoteSnapshot, setRemoteSnapshot } from './snapshot-remote.client';
 import type { FileMap } from '~/lib/stores/files';
 import type { Snapshot } from './types';
 import { webcontainer } from '~/lib/webcontainer';
@@ -65,7 +64,7 @@ export function useChatHistory() {
     if (mixedId) {
       Promise.all([
         getMessages(db, mixedId),
-        getSnapshot(db, mixedId), // Fetch snapshot from DB
+        getRemoteSnapshot(mixedId), // Fetch snapshot from Supabase (plus IndexedDB, moins de saturation navigateur)
       ])
         .then(async ([storedMessages, snapshot]) => {
           if (storedMessages && storedMessages.messages.length > 0) {
@@ -211,9 +210,8 @@ ${value.content}
         summary: chatSummary,
       };
 
-      // localStorage.setItem(`snapshot:${id}`, JSON.stringify(snapshot)); // Remove localStorage usage
       try {
-        await setSnapshot(db, id, snapshot);
+        await setRemoteSnapshot(id, snapshot);
       } catch (error) {
         console.error('Failed to save snapshot:', error);
         toast.error('Failed to save chat snapshot.');

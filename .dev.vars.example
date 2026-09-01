@@ -41,3 +41,8 @@ NODE_ENV=
 PORT=
 VITE_LOG_LEVEL=
 DEFAULT_NUM_CTX=
+
+# Sauvegarde des projets (snapshots) sur Supabase — clé service_role du
+# projet Supabase dédié à Aïsso (uvkpqgihomwgszhrapda), jamais la clé anon.
+# Project Settings > API > service_role dans le tableau de bord Supabase.
+SUPABASE_SERVICE_ROLE_KEY=
