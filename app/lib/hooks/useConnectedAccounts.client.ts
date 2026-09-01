@@ -67,7 +67,18 @@ export function useConnectedAccounts() {
           method: 'POST',
           headers: { Authorization: `Bearer ${idToken}` },
         });
-        const data = await res.json<{ url?: string; error?: string }>();
+
+        // La réponse est censée être du JSON dans tous les cas (succès ou
+        // erreur), mais une exception non gérée côté serveur peut renvoyer
+        // autre chose (page d'erreur générique) : on l'intercepte pour
+        // afficher un message clair plutôt qu'une erreur de parsing brute.
+        let data: { url?: string; error?: string };
+
+        try {
+          data = await res.json<{ url?: string; error?: string }>();
+        } catch {
+          throw new Error(`Réponse inattendue du serveur (HTTP ${res.status}).`);
+        }
 
         if (!res.ok || !data.url) {
           throw new Error(data.error || 'Impossible de démarrer la connexion.');
