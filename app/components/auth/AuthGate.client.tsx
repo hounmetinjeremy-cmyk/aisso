@@ -53,9 +53,9 @@ function GoogleIcon() {
   );
 }
 
-function LoginScreen() {
+function LoginScreen({ initialError }: { initialError?: string | null }) {
   const [busy, setBusy] = useState(false);
-  const [error, setError] = useState<string | null>(null);
+  const [error, setError] = useState<string | null>(initialError ?? null);
 
   useEffect(() => {
     getRedirectResult(auth).catch((err) => setError(messageFrom(err)));
@@ -132,8 +132,26 @@ function LoginScreen() {
 
 export function AuthGate({ children }: { children: ReactNode }) {
   const { user, loading } = useAuth();
+  const [stuck, setStuck] = useState(false);
 
-  if (loading) {
+  useEffect(() => {
+    if (!loading) {
+      setStuck(false);
+      return undefined;
+    }
+
+    /*
+     * Après un retour de connexion par redirection, Firebase reste parfois bloqué en
+     * silence (cookies tiers/stockage partitionné sur mobile) : ni succès ni erreur,
+     * juste un chargement infini. Au bout de 8s on abandonne l'attente et on propose
+     * de réessayer plutôt que de tourner en rond indéfiniment.
+     */
+    const timer = window.setTimeout(() => setStuck(true), 8000);
+
+    return () => window.clearTimeout(timer);
+  }, [loading]);
+
+  if (loading && !stuck) {
     return (
       <div className="flex items-center justify-center h-full w-full bg-bolt-elements-background-depth-1">
         <div className="i-svg-spinners:90-ring-with-bg text-2xl text-bolt-elements-textPrimary" />
@@ -142,7 +160,11 @@ export function AuthGate({ children }: { children: ReactNode }) {
   }
 
   if (!user) {
-    return <LoginScreen />;
+    return (
+      <LoginScreen
+        initialError={stuck ? 'La connexion a pris trop de temps. Réessaie.' : null}
+      />
+    );
   }
 
   return <>{children}</>;
