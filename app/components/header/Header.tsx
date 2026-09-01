@@ -21,8 +21,10 @@ export function Header() {
           type="button"
           onClick={() => sidebarOpen.set(!sidebarOpen.get())}
           aria-label="Ouvrir le menu (compte, historique des conversations)"
-          className="i-ph:list-bold text-2xl bg-transparent border-0 p-1 -ml-1 cursor-pointer text-bolt-elements-textPrimary"
-        />
+          className="flex items-center justify-center bg-transparent border-0 p-1 -ml-1 cursor-pointer"
+        >
+          <span className="i-ph:list-bold text-2xl text-bolt-elements-textPrimary" />
+        </button>
         <a href="/" className="text-xl font-semibold flex items-center gap-2">
           <img src="/logo.svg" alt="" className="w-7 h-7 inline-block" />
           <span className="text-bolt-elements-textPrimary">Aïsso</span>
