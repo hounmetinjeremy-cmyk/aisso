@@ -111,7 +111,10 @@ export const ChatBox: React.FC<ChatBoxProps> = (props) => {
               <ModelSelector
                 key={props.provider?.name + ':' + props.modelList.length}
                 model={props.model}
-                setModel={props.setModel}
+                setModel={(model) => {
+                  props.setModel?.(model);
+                  props.setIsModelSettingsCollapsed(true);
+                }}
                 modelList={props.modelList}
                 provider={props.provider}
                 setProvider={props.setProvider}
