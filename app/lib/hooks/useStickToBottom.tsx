@@ -125,6 +125,7 @@ export type ScrollToBottom = (scrollOptions?: ScrollToBottomOptions) => Promise<
 export type StopScroll = () => void;
 
 const STICK_TO_BOTTOM_OFFSET_PX = 70;
+const SCROLL_DIRECTION_THRESHOLD_PX = 10;
 const SIXTY_FPS_INTERVAL_MS = 1000 / 60;
 const RETAIN_ANIMATION_DURATION_MS = 350;
 
@@ -422,8 +423,15 @@ export const useStickToBottom = (options: StickToBottomOptions = {}) => {
           return;
         }
 
-        const isScrollingDown = scrollTop > lastScrollTop;
-        const isScrollingUp = scrollTop < lastScrollTop;
+        /*
+         * Exiger un déplacement d'au moins quelques pixels avant de considérer que
+         * l'utilisateur "s'échappe" volontairement du suivi automatique — sur mobile,
+         * un simple rebond de défilement (rubber-band) ou un tremblement tactile
+         * suffisait à couper le défilement automatique pour le reste de la réponse,
+         * obligeant à retaper sur "Go to last message" à chaque fois.
+         */
+        const isScrollingDown = scrollTop > lastScrollTop + SCROLL_DIRECTION_THRESHOLD_PX;
+        const isScrollingUp = scrollTop < lastScrollTop - SCROLL_DIRECTION_THRESHOLD_PX;
 
         if (state.animation?.ignoreEscapes) {
           state.scrollTop = lastScrollTop;
