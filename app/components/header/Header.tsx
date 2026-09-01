@@ -23,10 +23,9 @@ export function Header() {
           aria-label="Ouvrir l'historique des conversations"
           className="i-ph:sidebar-simple-duotone text-xl bg-transparent border-0 p-0 cursor-pointer"
         />
-        <a href="/" className="text-2xl font-semibold text-accent flex items-center">
-          {/* <span className="i-bolt:logo-text?mask w-[46px] inline-block" /> */}
-          <img src="/logo-light-styled.png" alt="logo" className="w-[90px] inline-block dark:hidden" />
-          <img src="/logo-dark-styled.png" alt="logo" className="w-[90px] inline-block hidden dark:block" />
+        <a href="/" className="text-xl font-semibold flex items-center gap-2">
+          <img src="/logo.svg" alt="" className="w-7 h-7 inline-block" />
+          <span className="text-bolt-elements-textPrimary">Aïsso</span>
         </a>
       </div>
       {chat.started && ( // Display ChatDescription and HeaderActionButtons only when the chat has started.
