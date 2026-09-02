@@ -22,6 +22,10 @@ export interface StreamingOptions extends Omit<Parameters<typeof _streamText>[0]
       supabaseUrl?: string;
     };
   };
+  githubConnection?: {
+    isConnected: boolean;
+    username: string | null;
+  };
 }
 
 const logger = createScopedLogger('stream-text');
@@ -160,6 +164,10 @@ export async function streamText(props: {
         hasSelectedProject: options?.supabaseConnection?.hasSelectedProject || false,
         credentials: options?.supabaseConnection?.credentials || undefined,
       },
+      github: {
+        isConnected: options?.githubConnection?.isConnected || false,
+        username: options?.githubConnection?.username ?? null,
+      },
     }) ?? getSystemPrompt();
 
   if (chatMode === 'build' && contextFiles && contextOptimization) {
@@ -280,7 +288,13 @@ export async function streamText(props: {
       apiKeys,
       providerSettings,
     }),
-    system: chatMode === 'build' ? systemPrompt : discussPrompt(),
+    system:
+      chatMode === 'build'
+        ? systemPrompt
+        : discussPrompt({
+            isConnected: options?.githubConnection?.isConnected || false,
+            username: options?.githubConnection?.username ?? null,
+          }),
     ...tokenParams,
     messages: convertToCoreMessages(processedMessages as any),
     ...filteredOptions,

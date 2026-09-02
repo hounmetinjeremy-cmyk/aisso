@@ -16,6 +16,7 @@ import { MCPService } from '~/lib/services/mcpService';
 import { StreamRecoveryManager } from '~/lib/.server/llm/stream-recovery';
 import { verifyFirebaseIdToken } from '~/lib/firebase-verify.server';
 import { autoImportGithubRepo } from '~/lib/.server/llm/github-auto-import';
+import { getGithubConnectionStatus } from '~/lib/.server/llm/github-tools';
 
 export async function action(args: ActionFunctionArgs) {
   return chatAction(args);
@@ -85,6 +86,17 @@ async function chatAction({ context, request }: ActionFunctionArgs) {
    * connecté), pas une erreur de la requête de chat elle-même.
    */
   const chatUserId = await verifyFirebaseIdToken(firebaseIdToken).catch(() => null);
+
+  /*
+   * Statut de connexion GitHub injecté dans le prompt système (voir prompt-library.ts) pour que le modèle sache
+   * s'il est connecté au lieu de deviner ou de prétendre ne pas pouvoir le savoir.
+   */
+  const githubConnection = context.cloudflare?.env
+    ? await getGithubConnectionStatus(context.cloudflare.env as Env, chatUserId).catch(() => ({
+        isConnected: false,
+        username: null,
+      }))
+    : { isConnected: false, username: null };
 
   const cookieHeader = request.headers.get('Cookie');
   const apiKeys = JSON.parse(parseCookies(cookieHeader || '').apiKeys || '{}');
@@ -265,6 +277,7 @@ async function chatAction({ context, request }: ActionFunctionArgs) {
 
         const options: StreamingOptions = {
           supabaseConnection: supabase,
+          githubConnection,
           toolChoice: 'auto',
           tools: mcpService.toolsWithoutExecute,
           maxSteps: maxLLMSteps,
