@@ -1,16 +1,14 @@
 /**
  * Import automatique et déterministe d'un dépôt GitHub mentionné en langage
- * naturel dans le chat — contourne délibérément le function calling du SDK
- * IA (voir github-tools.ts) : les modèles Gemini "thinking" échouent sur les
- * appels d'outils enchaînés faute de support de `thought_signature` dans la
- * version installée du SDK (limite connue, pas un bug de cette logique).
+ * naturel dans le chat. Implémentation de référence du pattern "IA cerveau /
+ * Worker exécutant" décrit dans `ai-intent-classifier.ts` — lire ce fichier
+ * en premier pour le contexte général (pourquoi jamais de tool-calling).
  *
  * Ici, aucun appel d'outil n'est fait par le modèle : le Worker détecte
  * lui-même l'intention, importe les fichiers, les injecte directement dans
  * le contexte de CETTE génération (le modèle peut donc en parler
  * immédiatement), et prévient le client via le data stream pour qu'il les
- * écrive dans FilesStore — ça marche avec n'importe quel modèle, y compris
- * ceux touchés par la limite ci-dessus.
+ * écrive dans FilesStore — ça marche avec n'importe quel modèle.
  *
  * Le verbe déclencheur ("importe", "va chercher"...) et le nom du dépôt ne
  * sont pas forcément dans le même message (l'utilisateur écrit souvent en
@@ -19,20 +17,19 @@
  * des derniers messages utilisateur pour recoller les deux.
  *
  * Quand ça ne suffit pas (nom de dépôt paraphrasé, faute de frappe, formulé
- * autrement que par une correspondance exacte de sous-chaîne), un dernier
- * recours IA prend le relais : `classifyImportTargetWithAI` — un simple
- * appel `generateText` SANS outils (voir `github-tools.ts`), donc sans le
- * risque de plantage du tool-calling avec Gemini "thinking". Ce recours ne
- * se déclenche que si un verbe d'import a été détecté récemment (pas sur
- * chaque message), pour ne pas ajouter un appel IA à chaque tour de chat.
+ * autrement que par une correspondance exacte de sous-chaîne), `classifyIntentWithAI`
+ * (`ai-intent-classifier.ts`) prend le relais. Ce recours ne se déclenche que
+ * si un verbe d'import a été détecté récemment (pas sur chaque message), pour
+ * ne pas ajouter un appel IA à chaque tour de chat.
  */
 
-import { generateText, type DataStreamWriter } from 'ai';
-import { DEFAULT_MODEL, DEFAULT_PROVIDER, PROVIDER_LIST, WORK_DIR } from '~/utils/constants';
+import type { DataStreamWriter } from 'ai';
+import { WORK_DIR } from '~/utils/constants';
 import type { IProviderSetting } from '~/types/model';
 import type { FileMap } from './constants';
 import { getGithubToken } from './github-tools';
 import { importRepoFiles, listUserRepos, type RepoSummary } from '~/lib/github-import.server';
+import { classifyIntentWithAI } from './ai-intent-classifier';
 import { createScopedLogger } from '~/utils/logger';
 
 const logger = createScopedLogger('github-auto-import');
@@ -126,73 +123,14 @@ function resolveImportTarget(repos: RepoSummary[], recentUserMessages: string[])
   return null;
 }
 
-// Nombre de caractères conservés par message dans le prompt de classification IA (reste léger).
-const AI_CLASSIFIER_MESSAGE_CHARS = 300;
-
-/**
- * Dernier recours quand la détection déterministe (`resolveImportTarget`)
- * n'a pas su relier un nom de dépôt précis à la demande — par exemple un nom
- * paraphrasé, mal orthographié, ou une périphrase ("mon appli de paris").
- * Appel `generateText` texte simple, sans outils, donc pas concerné par le
- * plantage tool-calling de Gemini "thinking" (voir en-tête du fichier).
- * Ne devine jamais un nom hors de la liste fournie — renvoie `null` au
- * moindre doute (réponse mal formée, dépôt inexistant, erreur réseau...).
- */
-async function classifyImportTargetWithAI(params: {
-  repos: RepoSummary[];
-  recentUserMessages: string[];
-  env?: Env;
-  apiKeys?: Record<string, string>;
-  providerSettings?: Record<string, IProviderSetting>;
-  currentModel: string;
-  currentProviderName: string;
-}): Promise<RepoSummary | null> {
-  const { repos, recentUserMessages, env, apiKeys, providerSettings, currentModel, currentProviderName } = params;
-
-  if (repos.length === 0) {
-    return null;
-  }
-
-  try {
-    const provider = PROVIDER_LIST.find((p) => p.name === currentProviderName) || DEFAULT_PROVIDER;
-    const model = provider.getModelInstance({
-      model: currentModel || DEFAULT_MODEL,
-      serverEnv: env as any,
-      apiKeys,
-      providerSettings,
-    });
-
-    const repoNames = repos.map((repo) => repo.name).join(', ');
-    const conversation = [...recentUserMessages]
-      .reverse()
-      .map((text, index) => `[message ${index + 1}] ${text.slice(0, AI_CLASSIFIER_MESSAGE_CHARS)}`)
-      .join('\n');
-
-    const { text } = await generateText({
-      model,
-      temperature: 0,
-      system:
-        "Tu analyses les derniers messages d'un utilisateur pour détecter s'il veut importer un de ses dépôts " +
-        `GitHub existants dans le projet en cours. Dépôts disponibles : ${repoNames}. ` +
-        "Réponds UNIQUEMENT avec le nom EXACT d'un de ces dépôts si l'utilisateur veut clairement l'importer, le " +
-        "récupérer, l'ouvrir, ou reprendre le travail dessus. Sinon réponds exactement NONE. Pas de phrase, pas " +
-        'de ponctuation, juste le nom du dépôt ou NONE.',
-      prompt: conversation,
-    });
-
-    const answer = text.trim();
-
-    return repos.find((repo) => repo.name.toLowerCase() === answer.toLowerCase()) ?? null;
-  } catch (error) {
-    logger.error('classifyImportTargetWithAI failed', error);
-    return null;
-  }
-}
+const IMPORT_CLASSIFIER_INSTRUCTIONS =
+  "Tu analyses les derniers messages d'un utilisateur pour détecter s'il veut importer un de ses dépôts GitHub " +
+  "existants dans le projet en cours (le récupérer, l'ouvrir, ou reprendre le travail dessus).";
 
 /**
  * Si les derniers messages utilisateur ressemblent à une demande d'import
  * d'un dépôt connecté (verbe d'action + nom de dépôt reconnu, voir
- * `resolveImportTarget`, avec `classifyImportTargetWithAI` en dernier
+ * `resolveImportTarget`, avec `classifyIntentWithAI` en dernier
  * recours), importe ses fichiers et les fusionne dans `files` (mutation
  * directe, même forme que le FileMap déjà utilisé pour le contexte du
  * projet). Ne fait rien silencieusement dans tous les autres cas (pas de
@@ -238,14 +176,15 @@ export async function autoImportGithubRepo(params: {
 
     // Recours IA : seulement si un verbe d'import a été vu récemment, pour ne pas payer un appel à chaque message.
     if (!match && recentUserMessages.some((text) => TRIGGER_RE.test(text))) {
-      match = await classifyImportTargetWithAI({
-        repos,
+      match = await classifyIntentWithAI({
+        options: repos,
         recentUserMessages,
+        instructions: IMPORT_CLASSIFIER_INSTRUCTIONS,
         env,
         apiKeys,
         providerSettings,
-        currentModel: currentModel ?? DEFAULT_MODEL,
-        currentProviderName: currentProviderName ?? DEFAULT_PROVIDER.name,
+        currentModel,
+        currentProviderName,
       });
     }
 
