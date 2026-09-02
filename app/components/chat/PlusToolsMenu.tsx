@@ -73,14 +73,18 @@ function ConnectorRow({ provider, status, loading, connecting, connect, onClose 
 }
 
 /*
- * Committe l'état actuel des fichiers du projet sur un dépôt GitHub choisi
- * par l'utilisateur — remplace l'exécution locale (WebContainer désactivé)
- * par un commit fait côté serveur avec le jeton GitHub stocké. Si le projet
- * Vercel de l'utilisateur est lié nativement à ce dépôt, ce commit déclenche
- * automatiquement un déploiement Vercel, sans appel direct à l'API Vercel.
+ * Deux sens possibles avec un dépôt GitHub choisi par l'utilisateur :
+ * - Importer : charge les fichiers d'un dépôt existant dans le projet en
+ *   cours (pour reprendre un projet déjà sur GitHub).
+ * - Committer & déployer : envoie l'état actuel des fichiers du projet vers
+ *   le dépôt — remplace l'exécution locale (WebContainer désactivé) par un
+ *   commit fait côté serveur avec le jeton GitHub stocké. Si le projet
+ *   Vercel de l'utilisateur est lié nativement à ce dépôt, ce commit
+ *   déclenche automatiquement un déploiement Vercel, sans appel direct à
+ *   l'API Vercel.
  */
 function DeployPanel({ onClose }: { onClose: () => void }) {
-  const { repos, loadingRepos, fetchRepos, deploying, deploy } = useDeployToGitHub();
+  const { repos, loadingRepos, fetchRepos, deploying, deploy, importing, importRepo } = useDeployToGitHub();
   const [selected, setSelected] = useState<SelectedRepo | null>(() => loadSelectedRepo());
   const [result, setResult] = useState<{ commitUrl: string } | null>(null);
   const fetchedRef = useRef(false);
@@ -99,6 +103,24 @@ function DeployPanel({ onClose }: { onClose: () => void }) {
       setSelected({ owner: repo.owner, repo: repo.name, branch: repo.defaultBranch });
       setResult(null);
     }
+  };
+
+  const handleImport = () => {
+    if (!selected) {
+      return;
+    }
+
+    importRepo(selected)
+      .then(({ importedCount, skipped }) => {
+        toast.success(
+          `${importedCount} fichier${importedCount > 1 ? 's' : ''} importé${importedCount > 1 ? 's' : ''}` +
+            (skipped > 0 ? ` (${skipped} ignoré${skipped > 1 ? 's' : ''}, binaires ou trop volumineux)` : ''),
+        );
+        onClose();
+      })
+      .catch((error) => {
+        toast.error(error instanceof Error ? error.message : "L'import a échoué.");
+      });
   };
 
   const handleDeploy = () => {
@@ -140,14 +162,25 @@ function DeployPanel({ onClose }: { onClose: () => void }) {
         </select>
       )}
 
-      <button
-        type="button"
-        onClick={handleDeploy}
-        disabled={!selected || deploying}
-        className="text-sm font-medium px-3 py-1.5 rounded-md bg-purple-600 text-white hover:bg-purple-700 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
-      >
-        {deploying ? 'Envoi en cours...' : 'Committer & déployer'}
-      </button>
+      <div className="flex gap-2">
+        <button
+          type="button"
+          onClick={handleImport}
+          disabled={!selected || importing || deploying}
+          className="flex-1 text-sm font-medium px-3 py-1.5 rounded-md border border-bolt-elements-borderColor text-bolt-elements-textPrimary hover:bg-bolt-elements-item-backgroundActive transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+        >
+          {importing ? 'Import...' : 'Importer'}
+        </button>
+
+        <button
+          type="button"
+          onClick={handleDeploy}
+          disabled={!selected || deploying || importing}
+          className="flex-1 text-sm font-medium px-3 py-1.5 rounded-md bg-purple-600 text-white hover:bg-purple-700 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+        >
+          {deploying ? 'Envoi...' : 'Committer & déployer'}
+        </button>
+      </div>
 
       {result && (
         <a
@@ -299,7 +332,7 @@ export function PlusToolsMenu(props: PlusToolsMenuProps) {
             </button>
           )}
 
-          {props.chatStarted && connectedStatus.github && (
+          {connectedStatus.github && (
             <>
               <div className="h-px bg-bolt-elements-borderColor my-1 mx-2" />
 
@@ -309,7 +342,7 @@ export function PlusToolsMenu(props: PlusToolsMenuProps) {
                 onClick={() => setDeployOpen((v) => !v)}
               >
                 <div className="i-ph:rocket-launch text-lg" />
-                <span>Déployer</span>
+                <span>GitHub</span>
                 <div
                   className={classNames('i-ph:caret-down text-sm ml-auto transition-transform', deployOpen ? 'rotate-180' : '')}
                 />

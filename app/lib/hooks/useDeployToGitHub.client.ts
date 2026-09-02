@@ -76,6 +76,7 @@ export function useDeployToGitHub() {
   const [repos, setRepos] = useState<DeployRepo[] | null>(null);
   const [loadingRepos, setLoadingRepos] = useState(false);
   const [deploying, setDeploying] = useState(false);
+  const [importing, setImporting] = useState(false);
 
   const fetchRepos = useCallback(async () => {
     if (!user) {
@@ -143,5 +144,47 @@ export function useDeployToGitHub() {
     [user],
   );
 
-  return { repos, loadingRepos, fetchRepos, deploying, deploy };
+  const importRepo = useCallback(
+    async (target: SelectedRepo) => {
+      if (!user) {
+        throw new Error('Non connecté.');
+      }
+
+      setImporting(true);
+
+      try {
+        const idToken = await user.getIdToken();
+        const res = await fetch('/api/deploy/import', {
+          method: 'POST',
+          headers: { Authorization: `Bearer ${idToken}`, 'Content-Type': 'application/json' },
+          body: JSON.stringify(target),
+        });
+
+        let data: { files?: { path: string; content: string }[]; skipped?: number; error?: string };
+
+        try {
+          data = await res.json();
+        } catch {
+          throw new Error(`Réponse inattendue du serveur (HTTP ${res.status}).`);
+        }
+
+        if (!res.ok || !data.files) {
+          throw new Error(data.error || "L'import a échoué.");
+        }
+
+        for (const file of data.files) {
+          await workbenchStore.createFile(`${WORK_DIR}/${file.path}`, file.content);
+        }
+
+        saveSelectedRepo(target);
+
+        return { importedCount: data.files.length, skipped: data.skipped ?? 0 };
+      } finally {
+        setImporting(false);
+      }
+    },
+    [user],
+  );
+
+  return { repos, loadingRepos, fetchRepos, deploying, deploy, importing, importRepo };
 }
