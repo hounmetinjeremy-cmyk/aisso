@@ -8,7 +8,7 @@ import { useMessageParser, usePromptEnhancer, useShortcuts } from '~/lib/hooks';
 import { description, useChatHistory } from '~/lib/persistence';
 import { chatStore } from '~/lib/stores/chat';
 import { workbenchStore } from '~/lib/stores/workbench';
-import { DEFAULT_MODEL, DEFAULT_PROVIDER, PROMPT_COOKIE_KEY, PROVIDER_LIST } from '~/utils/constants';
+import { DEFAULT_MODEL, DEFAULT_PROVIDER, PROMPT_COOKIE_KEY, PROVIDER_LIST, WORK_DIR } from '~/utils/constants';
 import { cubicEasingFn } from '~/utils/easings';
 import { createScopedLogger, renderLogger } from '~/utils/logger';
 import { BaseChat } from './BaseChat';
@@ -212,6 +212,45 @@ export const ChatImpl = memo(
       initialMessages,
       initialInput: Cookies.get(PROMPT_COOKIE_KEY) || '',
     });
+
+    // Écrit dans FilesStore les fichiers qu'un import GitHub automatique
+    // (déclenché côté serveur par une demande en langage naturel, voir
+    // github-auto-import.ts) a préparés pour ce tour de conversation — le
+    // modèle en a déjà eu connaissance pour répondre, ici on les rend
+    // réellement visibles/éditables dans le projet.
+    const processedGithubImportCountRef = useRef(0);
+
+    useEffect(() => {
+      if (!chatData) {
+        processedGithubImportCountRef.current = 0;
+        return;
+      }
+
+      const newItems = chatData.slice(processedGithubImportCountRef.current);
+      processedGithubImportCountRef.current = chatData.length;
+
+      for (const item of newItems) {
+        if (item && typeof item === 'object' && (item as { type?: string }).type === 'githubAutoImport') {
+          const payload = item as {
+            owner: string;
+            repo: string;
+            branch: string;
+            files: { path: string; content: string }[];
+          };
+
+          (async () => {
+            for (const file of payload.files) {
+              await workbenchStore.createFile(`${WORK_DIR}/${file.path}`, file.content);
+            }
+
+            toast.success(
+              `${payload.owner}/${payload.repo} importé automatiquement (${payload.files.length} fichier${payload.files.length > 1 ? 's' : ''}).`,
+            );
+          })();
+        }
+      }
+    }, [chatData]);
+
     useEffect(() => {
       const prompt = searchParams.get('prompt');
 

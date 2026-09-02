@@ -16,6 +16,7 @@ import { MCPService } from '~/lib/services/mcpService';
 import { StreamRecoveryManager } from '~/lib/.server/llm/stream-recovery';
 import { verifyFirebaseIdToken } from '~/lib/firebase-verify.server';
 import { getGithubTools } from '~/lib/.server/llm/github-tools';
+import { autoImportGithubRepo } from '~/lib/.server/llm/github-auto-import';
 
 export async function action(args: ActionFunctionArgs) {
   return chatAction(args);
@@ -108,6 +109,23 @@ async function chatAction({ context, request }: ActionFunctionArgs) {
     const dataStream = createDataStream({
       async execute(dataStream) {
         streamRecovery.startMonitoring();
+
+        if (context.cloudflare?.env) {
+          const lastUserMessage = [...messages].reverse().find((message) => message.role === 'user');
+          const lastUserText =
+            typeof lastUserMessage?.content === 'string' ? lastUserMessage.content : '';
+
+          await autoImportGithubRepo({
+            env: context.cloudflare.env as Env,
+            userId: chatUserId,
+            lastUserMessageText: lastUserText,
+            files: files || {},
+            dataStream,
+          }).catch((error) => {
+            logger.error('autoImportGithubRepo failed', error);
+            return null;
+          });
+        }
 
         const filePaths = getFilePaths(files || {});
         let filteredFiles: FileMap | undefined = undefined;

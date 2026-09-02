@@ -29,6 +29,36 @@ export interface ImportResult {
   truncated: boolean;
 }
 
+export interface RepoSummary {
+  owner: string;
+  name: string;
+  fullName: string;
+  defaultBranch: string;
+  private: boolean;
+}
+
+export async function listUserRepos(token: string): Promise<RepoSummary[]> {
+  const res = await fetch('https://api.github.com/user/repos?sort=updated&per_page=100&affiliation=owner,collaborator', {
+    headers: githubHeaders(token),
+  });
+
+  if (!res.ok) {
+    throw new Error(`Impossible de lister les dépôts (HTTP ${res.status}).`);
+  }
+
+  const repos = await res.json<
+    Array<{ full_name: string; name: string; owner: { login: string }; default_branch: string; private: boolean }>
+  >();
+
+  return repos.map((r) => ({
+    owner: r.owner.login,
+    name: r.name,
+    fullName: r.full_name,
+    defaultBranch: r.default_branch,
+    private: r.private,
+  }));
+}
+
 export async function importRepoFiles(
   token: string,
   params: { owner: string; repo: string; branch: string },

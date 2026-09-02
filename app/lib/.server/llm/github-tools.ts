@@ -22,7 +22,7 @@ import { importRepoFiles } from '~/lib/github-import.server';
 
 const GITHUB_API = 'https://api.github.com';
 
-async function getGithubToken(env: Env, userId: string): Promise<string | null> {
+export async function getGithubToken(env: Env, userId: string): Promise<string | null> {
   if (!env.SUPABASE_SERVICE_ROLE_KEY) {
     return null;
   }
