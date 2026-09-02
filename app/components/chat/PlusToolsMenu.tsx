@@ -7,6 +7,7 @@ import { McpTools } from './MCPTools';
 import { WebSearch } from './WebSearch.client';
 import { SupabaseConnection } from './SupabaseConnection';
 import { useConnectedAccounts, type OAuthProviderId, type ConnectedAccountsStatus } from '~/lib/hooks/useConnectedAccounts.client';
+import { useDeployToGitHub, loadSelectedRepo, type SelectedRepo } from '~/lib/hooks/useDeployToGitHub.client';
 import type { DesignScheme } from '~/types/design-scheme';
 
 const PROVIDER_LABELS: Record<OAuthProviderId, string> = {
@@ -71,6 +72,98 @@ function ConnectorRow({ provider, status, loading, connecting, connect, onClose 
   );
 }
 
+/*
+ * Committe l'état actuel des fichiers du projet sur un dépôt GitHub choisi
+ * par l'utilisateur — remplace l'exécution locale (WebContainer désactivé)
+ * par un commit fait côté serveur avec le jeton GitHub stocké. Si le projet
+ * Vercel de l'utilisateur est lié nativement à ce dépôt, ce commit déclenche
+ * automatiquement un déploiement Vercel, sans appel direct à l'API Vercel.
+ */
+function DeployPanel({ onClose }: { onClose: () => void }) {
+  const { repos, loadingRepos, fetchRepos, deploying, deploy } = useDeployToGitHub();
+  const [selected, setSelected] = useState<SelectedRepo | null>(() => loadSelectedRepo());
+  const [result, setResult] = useState<{ commitUrl: string } | null>(null);
+  const fetchedRef = useRef(false);
+
+  useEffect(() => {
+    if (!fetchedRef.current) {
+      fetchedRef.current = true;
+      void fetchRepos();
+    }
+  }, [fetchRepos]);
+
+  const handleSelectChange = (fullName: string) => {
+    const repo = repos?.find((r) => r.fullName === fullName);
+
+    if (repo) {
+      setSelected({ owner: repo.owner, repo: repo.name, branch: repo.defaultBranch });
+      setResult(null);
+    }
+  };
+
+  const handleDeploy = () => {
+    if (!selected) {
+      return;
+    }
+
+    deploy(selected)
+      .then((res) => {
+        setResult(res);
+        toast.success('Fichiers committés sur GitHub.');
+      })
+      .catch((error) => {
+        toast.error(error instanceof Error ? error.message : 'Le déploiement a échoué.');
+      });
+  };
+
+  return (
+    <div className="pl-8 pr-3 py-2 mx-1 flex flex-col gap-2">
+      {loadingRepos && !repos ? (
+        <div className="flex items-center gap-2 text-sm text-bolt-elements-textSecondary">
+          <div className="i-svg-spinners:90-ring-with-bg text-base" />
+          Chargement des dépôts...
+        </div>
+      ) : (
+        <select
+          className="w-full text-sm px-2.5 py-1.5 rounded-md border border-bolt-elements-borderColor bg-bolt-elements-background-depth-1 text-bolt-elements-textPrimary"
+          value={selected ? `${selected.owner}/${selected.repo}` : ''}
+          onChange={(event) => handleSelectChange(event.target.value)}
+        >
+          <option value="" disabled>
+            Choisir un dépôt...
+          </option>
+          {repos?.map((repo) => (
+            <option key={repo.fullName} value={repo.fullName}>
+              {repo.fullName}
+            </option>
+          ))}
+        </select>
+      )}
+
+      <button
+        type="button"
+        onClick={handleDeploy}
+        disabled={!selected || deploying}
+        className="text-sm font-medium px-3 py-1.5 rounded-md bg-purple-600 text-white hover:bg-purple-700 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+      >
+        {deploying ? 'Envoi en cours...' : 'Committer & déployer'}
+      </button>
+
+      {result && (
+        <a
+          href={result.commitUrl}
+          target="_blank"
+          rel="noreferrer"
+          onClick={onClose}
+          className="text-xs text-purple-700 dark:text-purple-300 underline"
+        >
+          Voir le commit sur GitHub
+        </a>
+      )}
+    </div>
+  );
+}
+
 interface PlusToolsMenuProps {
   onUploadFile: () => void;
   designScheme?: DesignScheme;
@@ -94,6 +187,7 @@ interface PlusToolsMenuProps {
 export function PlusToolsMenu(props: PlusToolsMenuProps) {
   const [open, setOpen] = useState(false);
   const [connectorsOpen, setConnectorsOpen] = useState(false);
+  const [deployOpen, setDeployOpen] = useState(false);
   const menuRef = useRef<HTMLDivElement>(null);
   const {
     status: connectedStatus,
@@ -203,6 +297,26 @@ export function PlusToolsMenu(props: PlusToolsMenuProps) {
               <span>Mode discussion</span>
               {props.chatMode === 'discuss' && <div className="i-ph:check-bold text-sm ml-auto" />}
             </button>
+          )}
+
+          {props.chatStarted && connectedStatus.github && (
+            <>
+              <div className="h-px bg-bolt-elements-borderColor my-1 mx-2" />
+
+              <button
+                type="button"
+                className="flex items-center gap-2.5 px-3 py-2 text-sm text-bolt-elements-textPrimary hover:bg-bolt-elements-item-backgroundActive rounded-md mx-1"
+                onClick={() => setDeployOpen((v) => !v)}
+              >
+                <div className="i-ph:rocket-launch text-lg" />
+                <span>Déployer</span>
+                <div
+                  className={classNames('i-ph:caret-down text-sm ml-auto transition-transform', deployOpen ? 'rotate-180' : '')}
+                />
+              </button>
+
+              {deployOpen && <DeployPanel onClose={close} />}
+            </>
           )}
 
           <div className="h-px bg-bolt-elements-borderColor my-1 mx-2" />
