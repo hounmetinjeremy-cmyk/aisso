@@ -15,7 +15,6 @@ import type { DesignScheme } from '~/types/design-scheme';
 import { MCPService } from '~/lib/services/mcpService';
 import { StreamRecoveryManager } from '~/lib/.server/llm/stream-recovery';
 import { verifyFirebaseIdToken } from '~/lib/firebase-verify.server';
-import { getGithubTools } from '~/lib/.server/llm/github-tools';
 import { autoImportGithubRepo } from '~/lib/.server/llm/github-auto-import';
 
 export async function action(args: ActionFunctionArgs) {
@@ -97,13 +96,14 @@ async function chatAction({ context, request }: ActionFunctionArgs) {
     const totalMessageContent = messages.reduce((acc, message) => acc + message.content, '');
     logger.debug(`Total message length: ${totalMessageContent.split(' ').length}, words`);
 
-    const githubTools = context.cloudflare?.env
-      ? await getGithubTools(context.cloudflare.env as Env, chatUserId).catch((error) => {
-          logger.error('getGithubTools failed', error);
-          return {};
-        })
-      : {};
-
+    // Les outils IA GitHub (list_github_repos/import_github_repo, function
+    // calling classique) restaient en secours pour le modèle, mais Gemini
+    // "thinking" (le modèle par défaut de l'app) plante dessus faute de
+    // support de thought_signature dans le SDK installé (voir
+    // github-auto-import.ts) — un modèle qui ne trouve pas de nom de dépôt
+    // précis dans la détection déterministe tentait alors ces outils et
+    // faisait planter tout l'échange. Retirés : seule la détection
+    // déterministe (Worker, jamais le modèle) importe désormais un dépôt.
     let lastChunk: string | undefined = undefined;
 
     const dataStream = createDataStream({
@@ -243,7 +243,7 @@ async function chatAction({ context, request }: ActionFunctionArgs) {
         const options: StreamingOptions = {
           supabaseConnection: supabase,
           toolChoice: 'auto',
-          tools: { ...mcpService.toolsWithoutExecute, ...githubTools },
+          tools: mcpService.toolsWithoutExecute,
           maxSteps: maxLLMSteps,
           onStepFinish: ({ toolCalls }) => {
             // add tool call annotations for frontend processing
