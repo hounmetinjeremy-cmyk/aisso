@@ -19,7 +19,6 @@ import {
 } from './db';
 import type { FileMap } from '~/lib/stores/files';
 import type { Snapshot } from './types';
-import { webcontainer } from '~/lib/webcontainer';
 import { detectProjectCommands, createCommandActionsString } from '~/utils/projectCommands';
 import type { ContextAnnotation } from '~/types/context';
 
@@ -222,37 +221,24 @@ ${value.content}
     [db],
   );
 
-  const restoreSnapshot = useCallback(async (id: string, snapshot?: Snapshot) => {
-    // const snapshotStr = localStorage.getItem(`snapshot:${id}`); // Remove localStorage usage
-    const container = await webcontainer;
-
+  const restoreSnapshot = useCallback(async (_id: string, snapshot?: Snapshot) => {
     const validSnapshot = snapshot || { chatIndex: '', files: {} };
 
     if (!validSnapshot?.files) {
       return;
     }
 
-    Object.entries(validSnapshot.files).forEach(async ([key, value]) => {
-      if (key.startsWith(container.workdir)) {
-        key = key.replace(container.workdir, '');
-      }
-
+    for (const [key, value] of Object.entries(validSnapshot.files)) {
       if (value?.type === 'folder') {
-        await container.fs.mkdir(key, { recursive: true });
+        await workbenchStore.createFolder(key);
       }
-    });
-    Object.entries(validSnapshot.files).forEach(async ([key, value]) => {
+    }
+
+    for (const [key, value] of Object.entries(validSnapshot.files)) {
       if (value?.type === 'file') {
-        if (key.startsWith(container.workdir)) {
-          key = key.replace(container.workdir, '');
-        }
-
-        await container.fs.writeFile(key, value.content, { encoding: value.isBinary ? undefined : 'utf8' });
-      } else {
+        await workbenchStore.createFile(key, value.content);
       }
-    });
-
-    // workbenchStore.files.setKey(snapshot?.files)
+    }
   }, []);
 
   return {
