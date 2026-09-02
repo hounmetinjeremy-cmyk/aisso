@@ -6,11 +6,17 @@
  * version installée du SDK (limite connue, pas un bug de cette logique).
  *
  * Ici, aucun appel d'outil n'est fait par le modèle : le Worker détecte
- * lui-même l'intention dans le dernier message, importe les fichiers, les
- * injecte directement dans le contexte de CETTE génération (le modèle peut
- * donc en parler immédiatement), et prévient le client via le data stream
- * pour qu'il les écrive dans FilesStore — ça marche avec n'importe quel
- * modèle, y compris ceux touchés par la limite ci-dessus.
+ * lui-même l'intention, importe les fichiers, les injecte directement dans
+ * le contexte de CETTE génération (le modèle peut donc en parler
+ * immédiatement), et prévient le client via le data stream pour qu'il les
+ * écrive dans FilesStore — ça marche avec n'importe quel modèle, y compris
+ * ceux touchés par la limite ci-dessus.
+ *
+ * Le verbe déclencheur ("importe", "va chercher"...) et le nom du dépôt ne
+ * sont pas forcément dans le même message (l'utilisateur écrit souvent en
+ * plusieurs messages : "je veux modifier mon projet betesim" puis "il faut
+ * l'importer") — voir `resolveImportTarget` qui regarde une petite fenêtre
+ * des derniers messages utilisateur pour recoller les deux.
  */
 
 import type { DataStreamWriter } from 'ai';
@@ -52,24 +58,84 @@ export interface AutoImportResult {
   fileCount: number;
 }
 
+/*
+ * Combien de derniers messages utilisateur on regarde pour recoller un
+ * verbe d'import et un nom de dépôt mentionnés séparément.
+ */
+const LOOKBACK_MESSAGES = 6;
+
 /**
- * Si le dernier message utilisateur ressemble à une demande d'import d'un
- * dépôt connecté (verbe d'action + nom de dépôt reconnu), importe ses
- * fichiers et les fusionne dans `files` (mutation directe, même forme que
- * le FileMap déjà utilisé pour le contexte du projet). Ne fait rien
- * silencieusement dans tous les autres cas (pas de dépôt connecté, aucun nom
- * reconnu, ambiguïté) — jamais bloquant pour la réponse du chat.
+ * Détermine, à partir des derniers messages utilisateur (le plus récent en
+ * premier), quel dépôt importer — sans exiger que le verbe d'action et le
+ * nom du dépôt soient dans le même message. Trois cas couverts :
+ *
+ *  A. Verbe ET nom dans le dernier message ("va chercher betesim").
+ *  B. Nom mentionné plus tôt, verbe seul dans le dernier message
+ *     ("je veux modifier betesim" ... puis "il faut l'importer").
+ *  C. Verbe mentionné plus tôt, nom seul dans le dernier message
+ *     ("importe mon projet" ... puis juste "betesim" en réponse).
+ *
+ * Renvoie `null` si rien de net ne se dégage (pas de verbe récent, ou nom
+ * ambigu/introuvable) — le modèle répond alors normalement.
+ */
+function resolveImportTarget(repos: RepoSummary[], recentUserMessages: string[]): RepoSummary | null {
+  const [lastMessage] = recentUserMessages;
+
+  if (!lastMessage) {
+    return null;
+  }
+
+  const triggerInLast = TRIGGER_RE.test(lastMessage);
+  const matchInLast = matchRepoByName(repos, lastMessage);
+
+  // Cas A : tout est dans le dernier message.
+  if (triggerInLast && matchInLast) {
+    return matchInLast;
+  }
+
+  const previousMessages = recentUserMessages.slice(1, LOOKBACK_MESSAGES);
+
+  // Cas C : verbe maintenant, nom mentionné juste avant.
+  if (triggerInLast && !matchInLast) {
+    for (const text of previousMessages) {
+      const match = matchRepoByName(repos, text);
+
+      if (match) {
+        return match;
+      }
+    }
+
+    return null;
+  }
+
+  // Cas B : nom maintenant, verbe mentionné juste avant.
+  if (!triggerInLast && matchInLast) {
+    const hadTriggerRecently = previousMessages.some((text) => TRIGGER_RE.test(text));
+    return hadTriggerRecently ? matchInLast : null;
+  }
+
+  return null;
+}
+
+/**
+ * Si les derniers messages utilisateur ressemblent à une demande d'import
+ * d'un dépôt connecté (verbe d'action + nom de dépôt reconnu, voir
+ * `resolveImportTarget`), importe ses fichiers et les fusionne dans `files`
+ * (mutation directe, même forme que le FileMap déjà utilisé pour le
+ * contexte du projet). Ne fait rien silencieusement dans tous les autres cas
+ * (pas de dépôt connecté, aucun nom reconnu, ambiguïté) — jamais bloquant
+ * pour la réponse du chat.
  */
 export async function autoImportGithubRepo(params: {
   env: Env;
   userId: string | null;
-  lastUserMessageText: string;
+  recentUserMessages: string[];
   files: FileMap;
   dataStream: DataStreamWriter;
 }): Promise<AutoImportResult | null> {
-  const { env, userId, lastUserMessageText, files, dataStream } = params;
+  const { env, userId, recentUserMessages, files, dataStream } = params;
 
-  if (!userId || !lastUserMessageText || !TRIGGER_RE.test(lastUserMessageText)) {
+  if (!userId || recentUserMessages.length === 0) {
     return null;
   }
 
@@ -81,7 +147,7 @@ export async function autoImportGithubRepo(params: {
     }
 
     const repos = await listUserRepos(token);
-    const match = matchRepoByName(repos, lastUserMessageText);
+    const match = resolveImportTarget(repos, recentUserMessages);
 
     if (!match) {
       return null;

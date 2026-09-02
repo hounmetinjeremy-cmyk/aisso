@@ -124,13 +124,16 @@ async function chatAction({ context, request }: ActionFunctionArgs) {
         streamRecovery.startMonitoring();
 
         if (context.cloudflare?.env) {
-          const lastUserMessage = [...messages].reverse().find((message) => message.role === 'user');
-          const lastUserText = typeof lastUserMessage?.content === 'string' ? lastUserMessage.content : '';
+          const recentUserMessages = [...messages]
+            .reverse()
+            .filter((message) => message.role === 'user' && typeof message.content === 'string')
+            .slice(0, 6)
+            .map((message) => message.content as string);
 
           await autoImportGithubRepo({
             env: context.cloudflare.env as Env,
             userId: chatUserId,
-            lastUserMessageText: lastUserText,
+            recentUserMessages,
             files: files || {},
             dataStream,
           }).catch((error) => {
