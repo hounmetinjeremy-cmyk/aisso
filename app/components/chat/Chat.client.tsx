@@ -28,6 +28,7 @@ import type { ElementInfo } from '~/components/workbench/Inspector';
 import type { TextUIPart, FileUIPart, Attachment } from '@ai-sdk/ui-utils';
 import { useMCPStore } from '~/lib/stores/mcp';
 import type { LlmErrorAlertType } from '~/types/actions';
+import { useAuth } from '~/lib/hooks/useAuth.client';
 
 const logger = createScopedLogger('Chat');
 
@@ -116,6 +117,40 @@ export const ChatImpl = memo(
     const [chatMode, setChatMode] = useState<'discuss' | 'build'>('build');
     const [selectedElement, setSelectedElement] = useState<ElementInfo | null>(null);
     const mcpSettings = useMCPStore((state) => state.settings);
+    const { user: authUser } = useAuth();
+    const [firebaseIdToken, setFirebaseIdToken] = useState<string | undefined>(undefined);
+
+    // Jeton Firebase transmis au backend pour les outils IA qui ont besoin de
+    // savoir "qui" pose la question (ex. importer un dépôt GitHub connecté) —
+    // rafraîchi périodiquement car un jeton Firebase expire au bout d'1h.
+    useEffect(() => {
+      if (!authUser) {
+        setFirebaseIdToken(undefined);
+        return undefined;
+      }
+
+      let cancelled = false;
+
+      const refresh = () => {
+        authUser
+          .getIdToken()
+          .then((token) => {
+            if (!cancelled) {
+              setFirebaseIdToken(token);
+            }
+          })
+          .catch(() => {});
+      };
+
+      refresh();
+
+      const interval = setInterval(refresh, 30 * 60 * 1000);
+
+      return () => {
+        cancelled = true;
+        clearInterval(interval);
+      };
+    }, [authUser]);
 
     const {
       messages,
@@ -149,6 +184,7 @@ export const ChatImpl = memo(
           },
         },
         maxLLMSteps: mcpSettings.maxLLMSteps,
+        firebaseIdToken,
       },
       sendExtraMessageFields: true,
       onError: (e) => {

@@ -14,6 +14,8 @@ import { extractPropertiesFromMessage } from '~/lib/.server/llm/utils';
 import type { DesignScheme } from '~/types/design-scheme';
 import { MCPService } from '~/lib/services/mcpService';
 import { StreamRecoveryManager } from '~/lib/.server/llm/stream-recovery';
+import { verifyFirebaseIdToken } from '~/lib/firebase-verify.server';
+import { getGithubTools } from '~/lib/.server/llm/github-tools';
 
 export async function action(args: ActionFunctionArgs) {
   return chatAction(args);
@@ -48,7 +50,7 @@ async function chatAction({ context, request }: ActionFunctionArgs) {
     },
   });
 
-  const { messages, files, promptId, contextOptimization, supabase, chatMode, designScheme, maxLLMSteps } =
+  const { messages, files, promptId, contextOptimization, supabase, chatMode, designScheme, maxLLMSteps, firebaseIdToken } =
     await request.json<{
       messages: Messages;
       files: any;
@@ -65,7 +67,13 @@ async function chatAction({ context, request }: ActionFunctionArgs) {
         };
       };
       maxLLMSteps: number;
+      firebaseIdToken?: string;
     }>();
+
+  // Non-bloquant : un jeton absent/invalide signifie simplement que les
+  // outils GitHub ne seront pas proposés au modèle (pas d'accès sans compte
+  // connecté), pas une erreur de la requête de chat elle-même.
+  const chatUserId = await verifyFirebaseIdToken(firebaseIdToken).catch(() => null);
 
   const cookieHeader = request.headers.get('Cookie');
   const apiKeys = JSON.parse(parseCookies(cookieHeader || '').apiKeys || '{}');
@@ -87,6 +95,13 @@ async function chatAction({ context, request }: ActionFunctionArgs) {
     const mcpService = MCPService.getInstance();
     const totalMessageContent = messages.reduce((acc, message) => acc + message.content, '');
     logger.debug(`Total message length: ${totalMessageContent.split(' ').length}, words`);
+
+    const githubTools = context.cloudflare?.env
+      ? await getGithubTools(context.cloudflare.env as Env, chatUserId).catch((error) => {
+          logger.error('getGithubTools failed', error);
+          return {};
+        })
+      : {};
 
     let lastChunk: string | undefined = undefined;
 
@@ -210,7 +225,7 @@ async function chatAction({ context, request }: ActionFunctionArgs) {
         const options: StreamingOptions = {
           supabaseConnection: supabase,
           toolChoice: 'auto',
-          tools: mcpService.toolsWithoutExecute,
+          tools: { ...mcpService.toolsWithoutExecute, ...githubTools },
           maxSteps: maxLLMSteps,
           onStepFinish: ({ toolCalls }) => {
             // add tool call annotations for frontend processing

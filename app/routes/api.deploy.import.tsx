@@ -1,18 +1,7 @@
 import type { ActionFunction } from '@remix-run/cloudflare';
 import { verifyFirebaseIdToken } from '~/lib/firebase-verify.server';
 import { getSupabaseAdmin } from '~/lib/supabase-admin.server';
-
-const GITHUB_API = 'https://api.github.com';
-const MAX_FILES = 400;
-const MAX_FILE_BYTES = 250_000;
-
-function githubHeaders(token: string) {
-  return {
-    Authorization: `Bearer ${token}`,
-    Accept: 'application/vnd.github+json',
-    'User-Agent': 'Aisso-App',
-  };
-}
+import { importRepoFiles } from '~/lib/github-import.server';
 
 /**
  * Importe les fichiers texte d'un dépôt GitHub existant dans le projet en
@@ -60,74 +49,9 @@ export const action: ActionFunction = async ({ request, context }) => {
       return Response.json({ error: 'GitHub non connecté.' }, { status: 400 });
     }
 
-    const treeRes = await fetch(
-      `${GITHUB_API}/repos/${owner}/${repo}/git/trees/${branch}?recursive=1`,
-      { headers: githubHeaders(token) },
-    );
+    const result = await importRepoFiles(token, { owner, repo, branch });
 
-    if (!treeRes.ok) {
-      return Response.json({ error: `Impossible de lire le dépôt (HTTP ${treeRes.status}).` }, { status: 502 });
-    }
-
-    const treeData = await treeRes.json<{
-      truncated: boolean;
-      tree: Array<{ path: string; type: string; sha: string; size?: number }>;
-    }>();
-
-    const blobEntries = treeData.tree.filter(
-      (entry) => entry.type === 'blob' && (entry.size ?? 0) <= MAX_FILE_BYTES,
-    );
-
-    if (blobEntries.length > MAX_FILES) {
-      return Response.json(
-        { error: `Dépôt trop volumineux (${blobEntries.length} fichiers > ${MAX_FILES} max).` },
-        { status: 400 },
-      );
-    }
-
-    const skipped = treeData.tree.length - blobEntries.length;
-
-    const files = await Promise.all(
-      blobEntries.map(async (entry) => {
-        const blobRes = await fetch(`${GITHUB_API}/repos/${owner}/${repo}/git/blobs/${entry.sha}`, {
-          headers: githubHeaders(token),
-        });
-
-        if (!blobRes.ok) {
-          return null;
-        }
-
-        const blob = await blobRes.json<{ content: string; encoding: string }>();
-
-        if (blob.encoding !== 'base64') {
-          return null;
-        }
-
-        try {
-          const binary = atob(blob.content.replace(/\n/g, ''));
-          const bytes = new Uint8Array(binary.length);
-
-          for (let i = 0; i < binary.length; i++) {
-            bytes[i] = binary.charCodeAt(i);
-          }
-
-          const content = new TextDecoder('utf-8', { fatal: true }).decode(bytes);
-
-          return { path: entry.path, content };
-        } catch {
-          // Décodage UTF-8 strict échoué : fichier binaire, on l'ignore pour cet import.
-          return null;
-        }
-      }),
-    );
-
-    const textFiles = files.filter((file): file is { path: string; content: string } => file !== null);
-
-    return Response.json({
-      files: textFiles,
-      skipped: skipped + (blobEntries.length - textFiles.length),
-      truncated: treeData.truncated,
-    });
+    return Response.json(result);
   } catch (error) {
     return Response.json({ error: error instanceof Error ? error.message : 'Erreur inconnue' }, { status: 500 });
   }
