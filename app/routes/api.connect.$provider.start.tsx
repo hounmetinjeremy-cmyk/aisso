@@ -18,11 +18,13 @@ export const action: ActionFunction = async ({ request, context, params }) => {
     return Response.json({ error: 'Fournisseur inconnu' }, { status: 400 });
   }
 
-  // Tout le corps de la fonction est encapsulé : une exception non interceptée
-  // qui sort d'une action Remix est reformatée en "Unexpected Server Error"
-  // (masquage volontaire du message réel en production), ce qui casse le
-  // .json() côté client puisque ce n'est pas du JSON exploitable. On veut
-  // toujours répondre en JSON, avec le vrai message d'erreur si possible.
+  /*
+   * Tout le corps de la fonction est encapsulé : une exception non interceptée
+   * qui sort d'une action Remix est reformatée en "Unexpected Server Error"
+   * (masquage volontaire du message réel en production), ce qui casse le
+   * .json() côté client puisque ce n'est pas du JSON exploitable. On veut
+   * toujours répondre en JSON, avec le vrai message d'erreur si possible.
+   */
   try {
     const authHeader = request.headers.get('Authorization');
     const idToken = authHeader?.startsWith('Bearer ') ? authHeader.slice('Bearer '.length) : null;

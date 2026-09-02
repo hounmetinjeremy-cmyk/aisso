@@ -9,11 +9,9 @@ import FilePreview from './FilePreview';
 import { ScreenshotStateManager } from './ScreenshotStateManager';
 import { SendButton } from './SendButton.client';
 import { SpeechRecognitionButton } from '~/components/chat/SpeechRecognition';
-import { ExpoQrModal } from '~/components/workbench/ExpoQrModal';
 import styles from './BaseChat.module.scss';
 import type { ProviderInfo } from '~/types/model';
 import type { DesignScheme } from '~/types/design-scheme';
-import type { ElementInfo } from '~/components/workbench/Inspector';
 import { PlusToolsMenu } from './PlusToolsMenu';
 
 interface ChatBoxProps {
@@ -39,8 +37,6 @@ interface ChatBoxProps {
   stopListening: () => void;
   chatStarted: boolean;
   exportChat?: () => void;
-  qrModalOpen: boolean;
-  setQrModalOpen: (open: boolean) => void;
   handleFileUpload: () => void;
   setProvider?: ((provider: ProviderInfo) => void) | undefined;
   model?: string | undefined;
@@ -56,8 +52,6 @@ interface ChatBoxProps {
   setChatMode?: (mode: 'discuss' | 'build') => void;
   designScheme?: DesignScheme;
   setDesignScheme?: (scheme: DesignScheme) => void;
-  selectedElement?: ElementInfo | null;
-  setSelectedElement?: ((element: ElementInfo | null) => void) | undefined;
 }
 
 export const ChatBox: React.FC<ChatBoxProps> = (props) => {
@@ -150,22 +144,6 @@ export const ChatBox: React.FC<ChatBoxProps> = (props) => {
           />
         )}
       </ClientOnly>
-      {props.selectedElement && (
-        <div className="flex mx-1.5 gap-2 items-center justify-between rounded-lg rounded-b-none border border-b-none border-bolt-elements-borderColor text-bolt-elements-textPrimary flex py-1 px-2.5 font-medium text-xs">
-          <div className="flex gap-2 items-center lowercase">
-            <code className="bg-accent-500 rounded-4px px-1.5 py-1 mr-0.5 text-white">
-              {props?.selectedElement?.tagName}
-            </code>
-            selected for inspection
-          </div>
-          <button
-            className="bg-transparent text-accent-500 pointer-auto"
-            onClick={() => props.setSelectedElement?.(null)}
-          >
-            Clear
-          </button>
-        </div>
-      )}
       <div
         className={classNames(
           'relative bg-bolt-elements-background-depth-2 shadow-xs border border-bolt-elements-borderColor backdrop-blur rounded-3xl',
@@ -238,7 +216,9 @@ export const ChatBox: React.FC<ChatBoxProps> = (props) => {
             minHeight: props.TEXTAREA_MIN_HEIGHT,
             maxHeight: props.TEXTAREA_MAX_HEIGHT,
           }}
-          placeholder={props.chatMode === 'build' ? "Comment Aïsso peut t'aider aujourd'hui ?" : 'De quoi veux-tu discuter ?'}
+          placeholder={
+            props.chatMode === 'build' ? "Comment Aïsso peut t'aider aujourd'hui ?" : 'De quoi veux-tu discuter ?'
+          }
           translate="no"
         />
         {props.input.length > 3 ? (
@@ -307,7 +287,6 @@ export const ChatBox: React.FC<ChatBoxProps> = (props) => {
               )}
             </ClientOnly>
           </div>
-          <ExpoQrModal open={props.qrModalOpen} onClose={() => props.setQrModalOpen(false)} />
         </div>
       </div>
     </div>

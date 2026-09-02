@@ -1,6 +1,3 @@
-import { useState } from 'react';
-import { useStore } from '@nanostores/react';
-import { workbenchStore } from '~/lib/stores/workbench';
 import { DeployButton } from '~/components/deploy/DeployButton';
 
 interface HeaderActionButtonsProps {
@@ -8,11 +5,13 @@ interface HeaderActionButtonsProps {
 }
 
 export function HeaderActionButtons({ chatStarted: _chatStarted }: HeaderActionButtonsProps) {
-  const [activePreviewIndex] = useState(0);
-  const previews = useStore(workbenchStore.previews);
-  const activePreview = previews[activePreviewIndex];
-
-  const shouldShowButtons = activePreview;
+  /*
+   * Plus d'aperçu live (WebContainer retiré) : ce bouton de déploiement
+   * legacy (Netlify/Vercel/GitHub/GitLab) restait déjà toujours masqué
+   * avant ce changement, faute d'aperçu actif. Conservé désactivé pour ne
+   * pas casser le composant ; sa suppression complète est hors périmètre.
+   */
+  const shouldShowButtons = false;
 
   return (
     <div className="flex items-center gap-1">

@@ -29,10 +29,7 @@ declare global {
     google?: {
       accounts: {
         id: {
-          initialize: (config: {
-            client_id: string;
-            callback: (response: { credential: string }) => void;
-          }) => void;
+          initialize: (config: { client_id: string; callback: (response: { credential: string }) => void }) => void;
           prompt: (momentListener?: (notification: GsiMoment) => void) => void;
         };
       };
@@ -159,7 +156,11 @@ function LoginScreen({ initialError }: { initialError?: string | null }) {
        * d'annulation : la page va se recharger, getRedirectResult() reprend la main au
        * retour (voir useEffect ci-dessus et le timeout de 8s dans AuthGate).
        */
-      if (code === 'auth/popup-closed-by-user' || code === 'auth/cancelled-popup-request' || code === 'auth/popup-blocked') {
+      if (
+        code === 'auth/popup-closed-by-user' ||
+        code === 'auth/cancelled-popup-request' ||
+        code === 'auth/popup-blocked'
+      ) {
         try {
           await signInWithRedirect(auth, googleProvider);
           return;
@@ -203,11 +204,7 @@ function LoginScreen({ initialError }: { initialError?: string | null }) {
         disabled={busy}
         className="flex items-center justify-center gap-2 px-5 py-2.5 rounded-full border border-bolt-elements-borderColor bg-bolt-elements-background-depth-2 text-bolt-elements-textPrimary text-sm font-medium hover:bg-bolt-elements-item-backgroundActive transition-all disabled:opacity-70"
       >
-        {busy ? (
-          <div className="i-svg-spinners:90-ring-with-bg text-lg" />
-        ) : (
-          <GoogleIcon />
-        )}
+        {busy ? <div className="i-svg-spinners:90-ring-with-bg text-lg" /> : <GoogleIcon />}
         <span>{busy ? 'Connexion...' : 'Continuer avec Google'}</span>
       </button>
       {error && (
@@ -249,11 +246,7 @@ export function AuthGate({ children }: { children: ReactNode }) {
   }
 
   if (!user) {
-    return (
-      <LoginScreen
-        initialError={stuck ? 'La connexion a pris trop de temps. Réessaie.' : null}
-      />
-    );
+    return <LoginScreen initialError={stuck ? 'La connexion a pris trop de temps. Réessaie.' : null} />;
   }
 
   return <>{children}</>;

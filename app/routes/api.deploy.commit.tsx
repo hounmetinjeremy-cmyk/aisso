@@ -51,7 +51,10 @@ export const action: ActionFunction = async ({ request, context }) => {
     }
 
     if (files.length > MAX_FILES) {
-      return Response.json({ error: `Trop de fichiers (${files.length} > ${MAX_FILES} max par commit).` }, { status: 400 });
+      return Response.json(
+        { error: `Trop de fichiers (${files.length} > ${MAX_FILES} max par commit).` },
+        { status: 400 },
+      );
     }
 
     const supabase = getSupabaseAdmin(env.SUPABASE_SERVICE_ROLE_KEY);

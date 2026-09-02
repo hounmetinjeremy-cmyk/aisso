@@ -6,6 +6,7 @@
 
 export interface OAuthTokenResult {
   accessToken: string;
+
   /** Identifiant lisible côté fournisseur (ex: login GitHub), si disponible. */
   accountLabel?: string;
 }
@@ -15,6 +16,7 @@ export interface OAuthProvider {
   exchangeCode(params: { code: string; redirectUri: string }): Promise<OAuthTokenResult>;
 }
 
+/* eslint-disable @typescript-eslint/naming-convention -- paramètres de propriété nommés selon la convention OAuth (clientId/clientSecret), pas besoin de préfixe underscore */
 class GitHubOAuthProvider implements OAuthProvider {
   constructor(
     private clientId: string,
@@ -26,8 +28,10 @@ class GitHubOAuthProvider implements OAuthProvider {
     url.searchParams.set('client_id', this.clientId);
     url.searchParams.set('redirect_uri', redirectUri);
 
-    // "repo" est nécessaire pour pouvoir pousser des commits sur les dépôts
-    // (publics et privés) de l'utilisateur.
+    /*
+     * "repo" est nécessaire pour pouvoir pousser des commits sur les dépôts
+     * (publics et privés) de l'utilisateur.
+     */
     url.searchParams.set('scope', 'repo');
     url.searchParams.set('state', state);
 
@@ -99,7 +103,7 @@ class VercelOAuthProvider implements OAuthProvider {
   buildAuthorizeUrl({ state }: { redirectUri: string; state: string }): string {
     if (!this.clientId || !this.integrationSlug) {
       throw new Error(
-        "Intégration Vercel pas encore configurée : crée-la sur vercel.com/dashboard/integrations/console, " +
+        'Intégration Vercel pas encore configurée : crée-la sur vercel.com/dashboard/integrations/console, ' +
           'puis renseigne VERCEL_OAUTH_CLIENT_ID, VERCEL_OAUTH_CLIENT_SECRET et VERCEL_INTEGRATION_SLUG.',
       );
     }
@@ -142,7 +146,11 @@ export function getOAuthProvider(provider: string, env: Env): OAuthProvider {
   }
 
   if (provider === 'vercel') {
-    return new VercelOAuthProvider(env.VERCEL_OAUTH_CLIENT_ID, env.VERCEL_OAUTH_CLIENT_SECRET, env.VERCEL_INTEGRATION_SLUG);
+    return new VercelOAuthProvider(
+      env.VERCEL_OAUTH_CLIENT_ID,
+      env.VERCEL_OAUTH_CLIENT_SECRET,
+      env.VERCEL_INTEGRATION_SLUG,
+    );
   }
 
   throw new Error(`Fournisseur OAuth inconnu : ${provider}`);

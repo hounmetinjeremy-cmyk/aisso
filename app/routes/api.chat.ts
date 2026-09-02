@@ -50,29 +50,40 @@ async function chatAction({ context, request }: ActionFunctionArgs) {
     },
   });
 
-  const { messages, files, promptId, contextOptimization, supabase, chatMode, designScheme, maxLLMSteps, firebaseIdToken } =
-    await request.json<{
-      messages: Messages;
-      files: any;
-      promptId?: string;
-      contextOptimization: boolean;
-      chatMode: 'discuss' | 'build';
-      designScheme?: DesignScheme;
-      supabase?: {
-        isConnected: boolean;
-        hasSelectedProject: boolean;
-        credentials?: {
-          anonKey?: string;
-          supabaseUrl?: string;
-        };
+  const {
+    messages,
+    files,
+    promptId,
+    contextOptimization,
+    supabase,
+    chatMode,
+    designScheme,
+    maxLLMSteps,
+    firebaseIdToken,
+  } = await request.json<{
+    messages: Messages;
+    files: any;
+    promptId?: string;
+    contextOptimization: boolean;
+    chatMode: 'discuss' | 'build';
+    designScheme?: DesignScheme;
+    supabase?: {
+      isConnected: boolean;
+      hasSelectedProject: boolean;
+      credentials?: {
+        anonKey?: string;
+        supabaseUrl?: string;
       };
-      maxLLMSteps: number;
-      firebaseIdToken?: string;
-    }>();
+    };
+    maxLLMSteps: number;
+    firebaseIdToken?: string;
+  }>();
 
-  // Non-bloquant : un jeton absent/invalide signifie simplement que les
-  // outils GitHub ne seront pas proposés au modèle (pas d'accès sans compte
-  // connecté), pas une erreur de la requête de chat elle-même.
+  /*
+   * Non-bloquant : un jeton absent/invalide signifie simplement que les
+   * outils GitHub ne seront pas proposés au modèle (pas d'accès sans compte
+   * connecté), pas une erreur de la requête de chat elle-même.
+   */
   const chatUserId = await verifyFirebaseIdToken(firebaseIdToken).catch(() => null);
 
   const cookieHeader = request.headers.get('Cookie');
@@ -96,14 +107,16 @@ async function chatAction({ context, request }: ActionFunctionArgs) {
     const totalMessageContent = messages.reduce((acc, message) => acc + message.content, '');
     logger.debug(`Total message length: ${totalMessageContent.split(' ').length}, words`);
 
-    // Les outils IA GitHub (list_github_repos/import_github_repo, function
-    // calling classique) restaient en secours pour le modèle, mais Gemini
-    // "thinking" (le modèle par défaut de l'app) plante dessus faute de
-    // support de thought_signature dans le SDK installé (voir
-    // github-auto-import.ts) — un modèle qui ne trouve pas de nom de dépôt
-    // précis dans la détection déterministe tentait alors ces outils et
-    // faisait planter tout l'échange. Retirés : seule la détection
-    // déterministe (Worker, jamais le modèle) importe désormais un dépôt.
+    /*
+     * Les outils IA GitHub (list_github_repos/import_github_repo, function
+     * calling classique) restaient en secours pour le modèle, mais Gemini
+     * "thinking" (le modèle par défaut de l'app) plante dessus faute de
+     * support de thought_signature dans le SDK installé (voir
+     * github-auto-import.ts) — un modèle qui ne trouve pas de nom de dépôt
+     * précis dans la détection déterministe tentait alors ces outils et
+     * faisait planter tout l'échange. Retirés : seule la détection
+     * déterministe (Worker, jamais le modèle) importe désormais un dépôt.
+     */
     let lastChunk: string | undefined = undefined;
 
     const dataStream = createDataStream({
@@ -112,8 +125,7 @@ async function chatAction({ context, request }: ActionFunctionArgs) {
 
         if (context.cloudflare?.env) {
           const lastUserMessage = [...messages].reverse().find((message) => message.role === 'user');
-          const lastUserText =
-            typeof lastUserMessage?.content === 'string' ? lastUserMessage.content : '';
+          const lastUserText = typeof lastUserMessage?.content === 'string' ? lastUserMessage.content : '';
 
           await autoImportGithubRepo({
             env: context.cloudflare.env as Env,

@@ -26,10 +26,7 @@ const TRIGGER_RE =
   /\b(va(?:s)? chercher|importe(?:r)?|récupère(?:r)?|recupere(?:r)?|charge(?:r)?|ouvre(?:r)?|reprend(?:re)?|clone(?:r)?|fetch|import|open|load)\b/i;
 
 function normalize(text: string): string {
-  return text
-    .toLowerCase()
-    .normalize('NFD')
-    .replace(/[̀-ͯ]/g, '');
+  return text.toLowerCase().normalize('NFD').replace(/[̀-ͯ]/g, '');
 }
 
 function matchRepoByName(repos: RepoSummary[], text: string): RepoSummary | null {
@@ -37,11 +34,14 @@ function matchRepoByName(repos: RepoSummary[], text: string): RepoSummary | null
   const matches = repos.filter((repo) => {
     const name = normalize(repo.name);
     const spaced = name.replace(/[-_]/g, ' ');
+
     return name.length >= 3 && (normalizedText.includes(name) || normalizedText.includes(spaced));
   });
 
-  // Ambigu (0 ou plusieurs dépôts correspondent au nom mentionné) : on
-  // n'importe rien plutôt que de deviner, le modèle répondra normalement.
+  /*
+   * Ambigu (0 ou plusieurs dépôts correspondent au nom mentionné) : on
+   * n'importe rien plutôt que de deviner, le modèle répondra normalement.
+   */
   return matches.length === 1 ? matches[0] : null;
 }
 

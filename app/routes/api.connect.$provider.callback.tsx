@@ -17,9 +17,11 @@ export const loader: LoaderFunction = async ({ request, context, params }) => {
   const provider = params.provider;
   const env = context.cloudflare.env as Env;
 
-  // APP_BASE_URL manquant : impossible de construire une redirection propre,
-  // on répond en texte brut plutôt que de laisser `new URL(undefined)` jeter
-  // une exception non interceptée (transformée en page d'erreur générique).
+  /*
+   * APP_BASE_URL manquant : impossible de construire une redirection propre,
+   * on répond en texte brut plutôt que de laisser `new URL(undefined)` jeter
+   * une exception non interceptée (transformée en page d'erreur générique).
+   */
   if (!env.APP_BASE_URL) {
     return new Response('Configuration serveur incomplète (APP_BASE_URL manquant).', { status: 500 });
   }
@@ -56,9 +58,11 @@ export const loader: LoaderFunction = async ({ request, context, params }) => {
 
   const supabase = getSupabaseAdmin(env.SUPABASE_SERVICE_ROLE_KEY);
 
-  // Encapsule le reste : toute exception non interceptée ici deviendrait une
-  // page d'erreur générique de Remix au lieu d'une redirection propre avec
-  // un message compréhensible pour l'utilisateur.
+  /*
+   * Encapsule le reste : toute exception non interceptée ici deviendrait une
+   * page d'erreur générique de Remix au lieu d'une redirection propre avec
+   * un message compréhensible pour l'utilisateur.
+   */
   try {
     const { data: stateRow, error: stateError } = await supabase
       .from('oauth_states')
@@ -66,8 +70,10 @@ export const loader: LoaderFunction = async ({ request, context, params }) => {
       .eq('state', state)
       .maybeSingle();
 
-    // Le state est à usage unique : on le supprime dès qu'on l'a lu, qu'il
-    // soit valide ou non.
+    /*
+     * Le state est à usage unique : on le supprime dès qu'on l'a lu, qu'il
+     * soit valide ou non.
+     */
     await supabase.from('oauth_states').delete().eq('state', state);
 
     if (stateError || !stateRow || stateRow.provider !== provider) {
@@ -91,7 +97,10 @@ export const loader: LoaderFunction = async ({ request, context, params }) => {
 
     const { error: upsertError } = await supabase
       .from('connected_accounts')
-      .upsert({ user_id: stateRow.user_id, updated_at: new Date().toISOString(), ...tokenColumns }, { onConflict: 'user_id' });
+      .upsert(
+        { user_id: stateRow.user_id, updated_at: new Date().toISOString(), ...tokenColumns },
+        { onConflict: 'user_id' },
+      );
 
     if (upsertError) {
       return failure('sauvegarde_echouee');

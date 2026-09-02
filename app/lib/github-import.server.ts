@@ -38,17 +38,21 @@ export interface RepoSummary {
 }
 
 export async function listUserRepos(token: string): Promise<RepoSummary[]> {
-  const res = await fetch('https://api.github.com/user/repos?sort=updated&per_page=100&affiliation=owner,collaborator', {
-    headers: githubHeaders(token),
-  });
+  const res = await fetch(
+    'https://api.github.com/user/repos?sort=updated&per_page=100&affiliation=owner,collaborator',
+    {
+      headers: githubHeaders(token),
+    },
+  );
 
   if (!res.ok) {
     throw new Error(`Impossible de lister les dépôts (HTTP ${res.status}).`);
   }
 
-  const repos = await res.json<
-    Array<{ full_name: string; name: string; owner: { login: string }; default_branch: string; private: boolean }>
-  >();
+  const repos =
+    await res.json<
+      Array<{ full_name: string; name: string; owner: { login: string }; default_branch: string; private: boolean }>
+    >();
 
   return repos.map((r) => ({
     owner: r.owner.login,

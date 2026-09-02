@@ -2,21 +2,15 @@ import { atom, map, type MapStore, type ReadableAtom, type WritableAtom } from '
 import type { EditorDocument, ScrollPosition } from '~/components/editor/codemirror/CodeMirrorEditor';
 import { ActionRunner } from '~/lib/runtime/action-runner';
 import type { ActionCallbackData, ArtifactCallbackData } from '~/lib/runtime/message-parser';
-import { webcontainer } from '~/lib/webcontainer';
-import type { ITerminal } from '~/types/terminal';
 import { unreachable } from '~/utils/unreachable';
 import { EditorStore } from './editor';
 import { FilesStore, type FileMap } from './files';
-import { PreviewsStore } from './previews';
-import { TerminalStore } from './terminal';
 import JSZip from 'jszip';
 import fileSaver from 'file-saver';
-import { Octokit, type RestEndpointMethodTypes } from '@octokit/rest';
 import { path } from '~/utils/path';
 import { WORK_DIR } from '~/utils/constants';
 import { extractRelativePath } from '~/utils/diff';
 import { description } from '~/lib/persistence';
-import Cookies from 'js-cookie';
 import { createSampler } from '~/utils/sampler';
 import type { ActionAlert, DeployAlert, SupabaseAlert } from '~/types/actions';
 
@@ -34,18 +28,18 @@ export type ArtifactUpdateState = Pick<ArtifactState, 'title' | 'closed'>;
 
 type Artifacts = MapStore<Record<string, ArtifactState>>;
 
-export type WorkbenchViewType = 'code' | 'diff' | 'preview';
+export type WorkbenchViewType = 'code';
 
 export class WorkbenchStore {
-  #previewsStore = new PreviewsStore(webcontainer);
-
-  // FilesStore est maintenant autonome (aucune dependance a un conteneur payant) :
-  // voir app/lib/stores/files.ts.
+  /*
+   * FilesStore est maintenant autonome (aucune dependance a un conteneur payant) :
+   * voir app/lib/stores/files.ts.
+   */
   #filesStore = new FilesStore();
   #editorStore = new EditorStore(this.#filesStore);
-  #terminalStore = new TerminalStore(webcontainer);
 
   #reloadedMessages = new Set<string>();
+  #filesTouchedThisTurn = new Set<string>();
 
   artifacts: Artifacts = import.meta.hot?.data.artifacts ?? map({});
 
@@ -87,8 +81,25 @@ export class WorkbenchStore {
     this.#globalExecutionQueue = this.#globalExecutionQueue.then(() => callback());
   }
 
-  get previews() {
-    return this.#previewsStore.previews;
+  /**
+   * Attend que toutes les actions en file d'attente (ecritures de fichiers
+   * en cours) soient terminees. A utiliser avant de collecter l'etat final
+   * des fichiers (ex. juste avant le push GitHub automatique en fin de tour).
+   */
+  async flushPendingActions(): Promise<void> {
+    await this.#globalExecutionQueue;
+  }
+
+  /**
+   * Renvoie les chemins de fichiers modifies depuis le dernier appel, puis
+   * vide l'accumulateur. Sert a savoir si un tour de chat a produit des
+   * changements a pousser vers GitHub.
+   */
+  takeFilesTouchedThisTurn(): string[] {
+    const touched = Array.from(this.#filesTouchedThisTurn);
+    this.#filesTouchedThisTurn.clear();
+
+    return touched;
   }
 
   get files() {
@@ -111,12 +122,6 @@ export class WorkbenchStore {
     return this.#filesStore.filesCount;
   }
 
-  get showTerminal() {
-    return this.#terminalStore.showTerminal;
-  }
-  get boltTerminal() {
-    return this.#terminalStore.boltTerminal;
-  }
   get alert() {
     return this.actionAlert;
   }
@@ -138,25 +143,6 @@ export class WorkbenchStore {
 
   clearDeployAlert() {
     this.deployAlert.set(undefined);
-  }
-
-  toggleTerminal(value?: boolean) {
-    this.#terminalStore.toggleTerminal(value);
-  }
-
-  attachTerminal(terminal: ITerminal) {
-    this.#terminalStore.attachTerminal(terminal);
-  }
-  attachBoltTerminal(terminal: ITerminal) {
-    this.#terminalStore.attachBoltTerminal(terminal);
-  }
-
-  detachTerminal(terminal: ITerminal) {
-    this.#terminalStore.detachTerminal(terminal);
-  }
-
-  onTerminalResize(cols: number, rows: number) {
-    this.#terminalStore.onTerminalResize(cols, rows);
   }
 
   setDocuments(files: FileMap) {
@@ -486,8 +472,6 @@ export class WorkbenchStore {
       closed: false,
       type,
       runner: new ActionRunner(
-        webcontainer,
-        () => this.boltTerminal,
         (alert) => {
           if (this.#reloadedMessages.has(messageId)) {
             return;
@@ -598,6 +582,7 @@ export class WorkbenchStore {
       if (!isStreaming) {
         await artifact.runner.runAction(data);
         this.resetAllFileModifications();
+        this.#filesTouchedThisTurn.add(data.action.filePath);
       }
     } else {
       await artifact.runner.runAction(data);
@@ -680,268 +665,6 @@ export class WorkbenchStore {
     }
 
     return syncedFiles;
-  }
-
-  async pushToRepository(
-    provider: 'github' | 'gitlab',
-    repoName: string,
-    commitMessage?: string,
-    username?: string,
-    token?: string,
-    isPrivate: boolean = false,
-    branchName: string = 'main',
-  ) {
-    try {
-      const isGitHub = provider === 'github';
-      const isGitLab = provider === 'gitlab';
-
-      const authToken = token || Cookies.get(isGitHub ? 'githubToken' : 'gitlabToken');
-      const owner = username || Cookies.get(isGitHub ? 'githubUsername' : 'gitlabUsername');
-
-      if (!authToken || !owner) {
-        throw new Error(`${provider} token or username is not set in cookies or provided.`);
-      }
-
-      const files = this.files.get();
-
-      if (!files || Object.keys(files).length === 0) {
-        throw new Error('No files found to push');
-      }
-
-      if (isGitHub) {
-        // Initialize Octokit with the auth token
-        const octokit = new Octokit({ auth: authToken });
-
-        // Check if the repository already exists before creating it
-        let repo: RestEndpointMethodTypes['repos']['get']['response']['data'];
-        let visibilityJustChanged = false;
-
-        try {
-          const resp = await octokit.repos.get({ owner, repo: repoName });
-          repo = resp.data;
-          console.log('Repository already exists, using existing repo');
-
-          // Check if we need to update visibility of existing repo
-          if (repo.private !== isPrivate) {
-            console.log(
-              `Updating repository visibility from ${repo.private ? 'private' : 'public'} to ${isPrivate ? 'private' : 'public'}`,
-            );
-
-            try {
-              // Update repository visibility using the update method
-              const { data: updatedRepo } = await octokit.repos.update({
-                owner,
-                repo: repoName,
-                private: isPrivate,
-              });
-
-              console.log('Repository visibility updated successfully');
-              repo = updatedRepo;
-              visibilityJustChanged = true;
-
-              // Add a delay after changing visibility to allow GitHub to fully process the change
-              console.log('Waiting for visibility change to propagate...');
-              await new Promise((resolve) => setTimeout(resolve, 3000)); // 3 second delay
-            } catch (visibilityError) {
-              console.error('Failed to update repository visibility:', visibilityError);
-
-              // Continue with push even if visibility update fails
-            }
-          }
-        } catch (error) {
-          if (error instanceof Error && 'status' in error && error.status === 404) {
-            // Repository doesn't exist, so create a new one
-            console.log(`Creating new repository with private=${isPrivate}`);
-
-            // Create new repository with specified privacy setting
-            const createRepoOptions = {
-              name: repoName,
-              private: isPrivate,
-              auto_init: true,
-            };
-
-            console.log('Create repo options:', createRepoOptions);
-
-            const { data: newRepo } = await octokit.repos.createForAuthenticatedUser(createRepoOptions);
-
-            console.log('Repository created:', newRepo.html_url, 'Private:', newRepo.private);
-            repo = newRepo;
-
-            // Add a small delay after creating a repository to allow GitHub to fully initialize it
-            console.log('Waiting for repository to initialize...');
-            await new Promise((resolve) => setTimeout(resolve, 2000)); // 2 second delay
-          } else {
-            console.error('Cannot create repo:', error);
-            throw error; // Some other error occurred
-          }
-        }
-
-        // Get all files
-        const files = this.files.get();
-
-        if (!files || Object.keys(files).length === 0) {
-          throw new Error('No files found to push');
-        }
-
-        // Function to push files with retry logic
-        const pushFilesToRepo = async (attempt = 1): Promise<string> => {
-          const maxAttempts = 3;
-
-          try {
-            console.log(`Pushing files to repository (attempt ${attempt}/${maxAttempts})...`);
-
-            // Create blobs for each file
-            const blobs = await Promise.all(
-              Object.entries(files).map(async ([filePath, dirent]) => {
-                if (dirent?.type === 'file' && dirent.content) {
-                  const { data: blob } = await octokit.git.createBlob({
-                    owner: repo.owner.login,
-                    repo: repo.name,
-                    content: Buffer.from(dirent.content).toString('base64'),
-                    encoding: 'base64',
-                  });
-                  return { path: extractRelativePath(filePath), sha: blob.sha };
-                }
-
-                return null;
-              }),
-            );
-
-            const validBlobs = blobs.filter(Boolean); // Filter out any undefined blobs
-
-            if (validBlobs.length === 0) {
-              throw new Error('No valid files to push');
-            }
-
-            // Refresh repository reference to ensure we have the latest data
-            const repoRefresh = await octokit.repos.get({ owner, repo: repoName });
-            repo = repoRefresh.data;
-
-            // Get the latest commit SHA (assuming main branch, update dynamically if needed)
-            const { data: ref } = await octokit.git.getRef({
-              owner: repo.owner.login,
-              repo: repo.name,
-              ref: `heads/${repo.default_branch || 'main'}`, // Handle dynamic branch
-            });
-            const latestCommitSha = ref.object.sha;
-
-            // Create a new tree
-            const { data: newTree } = await octokit.git.createTree({
-              owner: repo.owner.login,
-              repo: repo.name,
-              base_tree: latestCommitSha,
-              tree: validBlobs.map((blob) => ({
-                path: blob!.path,
-                mode: '100644',
-                type: 'blob',
-                sha: blob!.sha,
-              })),
-            });
-
-            // Create a new commit
-            const { data: newCommit } = await octokit.git.createCommit({
-              owner: repo.owner.login,
-              repo: repo.name,
-              message: commitMessage || 'Initial commit from your app',
-              tree: newTree.sha,
-              parents: [latestCommitSha],
-            });
-
-            // Update the reference
-            await octokit.git.updateRef({
-              owner: repo.owner.login,
-              repo: repo.name,
-              ref: `heads/${repo.default_branch || 'main'}`, // Handle dynamic branch
-              sha: newCommit.sha,
-            });
-
-            console.log('Files successfully pushed to repository');
-
-            return repo.html_url;
-          } catch (error) {
-            console.error(`Error during push attempt ${attempt}:`, error);
-
-            // If we've just changed visibility and this is not our last attempt, wait and retry
-            if ((visibilityJustChanged || attempt === 1) && attempt < maxAttempts) {
-              const delayMs = attempt * 2000; // Increasing delay with each attempt
-              console.log(`Waiting ${delayMs}ms before retry...`);
-              await new Promise((resolve) => setTimeout(resolve, delayMs));
-
-              return pushFilesToRepo(attempt + 1);
-            }
-
-            throw error; // Rethrow if we're out of attempts
-          }
-        };
-
-        // Execute the push function with retry logic
-        const repoUrl = await pushFilesToRepo();
-
-        // Return the repository URL
-        return repoUrl;
-      }
-
-      if (isGitLab) {
-        const { GitLabApiService: gitLabApiServiceClass } = await import('~/lib/services/gitlabApiService');
-        const gitLabApiService = new gitLabApiServiceClass(authToken, 'https://gitlab.com');
-
-        // Check or create repo
-        let repo = await gitLabApiService.getProject(owner, repoName);
-
-        if (!repo) {
-          repo = await gitLabApiService.createProject(repoName, isPrivate);
-          await new Promise((r) => setTimeout(r, 2000)); // Wait for repo initialization
-        }
-
-        // Check if branch exists, create if not
-        const branchRes = await gitLabApiService.getFile(repo.id, 'README.md', branchName).catch(() => null);
-
-        if (!branchRes || !branchRes.ok) {
-          // Create branch from default
-          await gitLabApiService.createBranch(repo.id, branchName, repo.default_branch);
-          await new Promise((r) => setTimeout(r, 1000));
-        }
-
-        const actions = Object.entries(files).reduce(
-          (acc, [filePath, dirent]) => {
-            if (dirent?.type === 'file' && dirent.content) {
-              acc.push({
-                action: 'create',
-                file_path: extractRelativePath(filePath),
-                content: dirent.content,
-              });
-            }
-
-            return acc;
-          },
-          [] as { action: 'create' | 'update'; file_path: string; content: string }[],
-        );
-
-        // Check which files exist and update action accordingly
-        for (const action of actions) {
-          const fileCheck = await gitLabApiService.getFile(repo.id, action.file_path, branchName);
-
-          if (fileCheck.ok) {
-            action.action = 'update';
-          }
-        }
-
-        // Commit all files
-        await gitLabApiService.commitFiles(repo.id, {
-          branch: branchName,
-          commit_message: commitMessage || 'Commit multiple files',
-          actions,
-        });
-
-        return repo.web_url;
-      }
-
-      // Should not reach here since we only handle GitHub and GitLab
-      throw new Error(`Unsupported provider: ${provider}`);
-    } catch (error) {
-      console.error('Error pushing to repository:', error);
-      throw error; // Rethrow the error for further handling
-    }
   }
 }
 

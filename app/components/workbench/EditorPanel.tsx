@@ -20,7 +20,6 @@ import { renderLogger } from '~/utils/logger';
 import { isMobile } from '~/utils/mobile';
 import { FileBreadcrumb } from './FileBreadcrumb';
 import { FileTree } from './FileTree';
-import { workbenchStore } from '~/lib/stores/workbench';
 import { Search } from './Search'; // <-- Ensure Search is imported
 import { classNames } from '~/utils/classNames'; // <-- Import classNames if not already present
 import { LockManager } from './LockManager'; // <-- Import LockManager

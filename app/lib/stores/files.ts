@@ -1,4 +1,3 @@
-import { getEncoding } from 'istextorbinary';
 import { map, type MapStore } from 'nanostores';
 import { Buffer } from 'node:buffer';
 import { path } from '~/utils/path';
@@ -15,7 +14,6 @@ import {
   getLockedFoldersForChat,
   isPathInLockedFolder,
   migrateLegacyLocks,
-  clearCache,
 } from '~/lib/persistence/lockedFiles';
 import { getCurrentChatId } from '~/utils/fileLocks';
 import { logFileChange } from '~/lib/persistence/aisso-supabase';
@@ -575,8 +573,10 @@ export class FilesStore {
       const currentFile = this.files.get()[filePath];
       const isLocked = currentFile?.type === 'file' ? currentFile.isLocked : false;
 
-      // Ecriture directe dans le store en memoire : plus de conteneur a payer,
-      // plus de latence reseau, c'est instantane.
+      /*
+       * Ecriture directe dans le store en memoire : plus de conteneur a payer,
+       * plus de latence reseau, c'est instantane.
+       */
       this.files.setKey(filePath, {
         type: 'file',
         content,

@@ -32,6 +32,7 @@ export function useConnectedAccounts() {
     if (!user) {
       setStatus(EMPTY_STATUS);
       setLoading(false);
+
       return;
     }
 
@@ -68,10 +69,12 @@ export function useConnectedAccounts() {
           headers: { Authorization: `Bearer ${idToken}` },
         });
 
-        // La réponse est censée être du JSON dans tous les cas (succès ou
-        // erreur), mais une exception non gérée côté serveur peut renvoyer
-        // autre chose (page d'erreur générique) : on l'intercepte pour
-        // afficher un message clair plutôt qu'une erreur de parsing brute.
+        /*
+         * La réponse est censée être du JSON dans tous les cas (succès ou
+         * erreur), mais une exception non gérée côté serveur peut renvoyer
+         * autre chose (page d'erreur générique) : on l'intercepte pour
+         * afficher un message clair plutôt qu'une erreur de parsing brute.
+         */
         let data: { url?: string; error?: string };
 
         try {

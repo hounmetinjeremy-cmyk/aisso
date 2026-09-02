@@ -12,22 +12,6 @@ export class EnhancedStreamingMessageParser extends StreamingMessageParser {
   private _processedCodeBlocks = new Map<string, Set<string>>();
   private _artifactCounter = 0;
 
-  // Optimized command pattern lookup
-  private _commandPatternMap = new Map<string, RegExp>([
-    ['npm', /^(npm|yarn|pnpm)\s+(install|run|start|build|dev|test|init|create|add|remove)/],
-    ['git', /^(git)\s+(add|commit|push|pull|clone|status|checkout|branch|merge|rebase|init|remote|fetch|log)/],
-    ['docker', /^(docker|docker-compose)\s+/],
-    ['build', /^(make|cmake|gradle|mvn|cargo|go)\s+/],
-    ['network', /^(curl|wget|ping|ssh|scp|rsync)\s+/],
-    ['webcontainer', /^(cat|chmod|cp|echo|hostname|kill|ln|ls|mkdir|mv|ps|pwd|rm|rmdir|xxd)\s*/],
-    ['webcontainer-extended', /^(alias|cd|clear|env|false|getconf|head|sort|tail|touch|true|uptime|which)\s*/],
-    ['interpreters', /^(node|python|python3|java|go|rust|ruby|php|perl)\s+/],
-    ['text-processing', /^(grep|sed|awk|cut|tr|sort|uniq|wc|diff)\s+/],
-    ['archive', /^(tar|zip|unzip|gzip|gunzip)\s+/],
-    ['process', /^(ps|top|htop|kill|killall|jobs|nohup)\s*/],
-    ['system', /^(df|du|free|uname|whoami|id|groups|date|uptime)\s*/],
-  ]);
-
   constructor(options: StreamingMessageParserOptions = {}) {
     super(options);
   }
@@ -63,9 +47,6 @@ export class EnhancedStreamingMessageParser extends StreamingMessageParser {
     const processed = this._processedCodeBlocks.get(messageId)!;
 
     let enhanced = input;
-
-    // First, detect and handle shell commands separately
-    enhanced = this._detectAndWrapShellCommands(messageId, enhanced, processed);
 
     // Optimized regex patterns with better performance
     const patterns = [
@@ -126,14 +107,6 @@ export class EnhancedStreamingMessageParser extends StreamingMessageParser {
         } else {
           // file_path, explicit_create, in_filename patterns
           [filePath, language, content] = args;
-        }
-
-        // Check if this should be treated as a shell command instead of a file
-        if (this._isShellCommand(content, language)) {
-          processed.add(blockHash);
-          logger.debug(`Auto-wrapped code block as shell command instead of file`);
-
-          return this._wrapInShellAction(content, messageId);
         }
 
         // Clean up the file path
@@ -207,16 +180,6 @@ export class EnhancedStreamingMessageParser extends StreamingMessageParser {
     return `<boltArtifact id="${artifactId}" title="${title}" type="bundled">
 <boltAction type="file" filePath="${filePath}">
 ${content}
-</boltAction>
-</boltArtifact>`;
-  }
-
-  private _wrapInShellAction(content: string, messageId: string): string {
-    const artifactId = `artifact-${messageId}-${this._artifactCounter++}`;
-
-    return `<boltArtifact id="${artifactId}" title="Shell Command" type="shell">
-<boltAction type="shell">
-${content.trim()}
 </boltAction>
 </boltArtifact>`;
   }
@@ -331,192 +294,6 @@ ${content.trim()}
     }
 
     return hash.toString(36);
-  }
-
-  private _isShellCommand(content: string, language: string): boolean {
-    // Check if language suggests shell execution
-    const shellLanguages = ['bash', 'sh', 'shell', 'zsh', 'fish', 'powershell', 'ps1'];
-    const isShellLang = shellLanguages.includes(language.toLowerCase());
-
-    if (!isShellLang) {
-      return false;
-    }
-
-    const trimmedContent = content.trim();
-    const lines = trimmedContent
-      .split('\n')
-      .map((line) => line.trim())
-      .filter(Boolean);
-
-    // Empty content is not a command
-    if (lines.length === 0) {
-      return false;
-    }
-
-    // First, check if it looks like script content (should NOT be treated as commands)
-    if (this._looksLikeScriptContent(trimmedContent)) {
-      return false; // This is a script file, not commands to execute
-    }
-
-    // Single line commands are likely to be executed
-    if (lines.length === 1) {
-      return this._isSingleLineCommand(lines[0]);
-    }
-
-    // Multi-line: check if it's a command sequence
-    return this._isCommandSequence(lines);
-  }
-
-  private _isSingleLineCommand(line: string): boolean {
-    // Check for command chains with &&, ||, |, ;
-    const hasChaining = /[;&|]{1,2}/.test(line);
-
-    if (hasChaining) {
-      // Split by chaining operators and check if parts look like commands
-      const parts = line.split(/[;&|]{1,2}/).map((p) => p.trim());
-      return parts.every((part) => part.length > 0 && !this._looksLikeScriptContent(part));
-    }
-
-    // Check for common command prefix patterns
-    const prefixPatterns = [
-      /^sudo\s+/, // sudo commands
-      /^time\s+/, // time profiling
-      /^nohup\s+/, // background processes
-      /^watch\s+/, // repeated execution
-      /^env\s+\w+=\w+\s+/, // environment variable setting
-    ];
-
-    // Remove prefixes to check the actual command
-    let cleanLine = line;
-
-    for (const prefix of prefixPatterns) {
-      cleanLine = cleanLine.replace(prefix, '');
-    }
-
-    // Optimized O(1) lookup using Map
-    for (const [, pattern] of this._commandPatternMap) {
-      if (pattern.test(cleanLine)) {
-        return true;
-      }
-    }
-
-    // Fallback to simple command detection
-    return this._isSimpleCommand(cleanLine);
-  }
-
-  private _isCommandSequence(lines: string[]): boolean {
-    // If most lines look like individual commands, treat as command sequence
-    const commandLikeLines = lines.filter(
-      (line) =>
-        line.length > 0 && !line.startsWith('#') && (this._isSingleLineCommand(line) || this._isSimpleCommand(line)),
-    );
-
-    // If more than 70% of non-comment lines are commands, treat as command sequence
-    return commandLikeLines.length / lines.length > 0.7;
-  }
-
-  private _isSimpleCommand(line: string): boolean {
-    // Simple heuristics for basic commands
-    const words = line.split(/\s+/);
-
-    if (words.length === 0) {
-      return false;
-    }
-
-    const firstWord = words[0];
-
-    // Don't treat variable assignments as commands (script-like)
-    if (line.includes('=') && !line.startsWith('export ') && !line.startsWith('env ') && !firstWord.includes('=')) {
-      return false;
-    }
-
-    // Don't treat function definitions as commands
-    if (line.includes('function ') || line.match(/^\w+\s*\(\s*\)/)) {
-      return false;
-    }
-
-    // Don't treat control structures as commands
-    if (/^(if|for|while|case|function|until|select)\s/.test(line)) {
-      return false;
-    }
-
-    // Don't treat here-documents as commands
-    if (line.includes('<<') || line.startsWith('EOF') || line.startsWith('END')) {
-      return false;
-    }
-
-    // Don't treat multi-line strings as commands
-    if (line.includes('"""') || line.includes("'''")) {
-      return false;
-    }
-
-    // Additional command-like patterns (fallback for unmatched commands)
-    const commandLikePatterns = [
-      /^[a-z][a-z0-9-_]*$/i, // Simple command names (like 'ls', 'grep', 'my-script')
-      /^\.\/[a-z0-9-_./]+$/i, // Relative executable paths (like './script.sh', './bin/command')
-      /^\/[a-z0-9-_./]+$/i, // Absolute executable paths (like '/usr/bin/command')
-      /^[a-z][a-z0-9-_]*\s+-.+/i, // Commands with flags (like 'command --flag')
-    ];
-
-    // Check if the first word looks like a command
-    const looksLikeCommand = commandLikePatterns.some((pattern) => pattern.test(firstWord));
-
-    return looksLikeCommand;
-  }
-
-  private _looksLikeScriptContent(content: string): boolean {
-    const lines = content.trim().split('\n');
-
-    // Indicators that this is a script file rather than commands to execute
-    const scriptIndicators = [
-      /^#!/, // Shebang
-      /function\s+\w+/, // Function definitions
-      /^\w+\s*\(\s*\)\s*\{/, // Function definition syntax
-      /^(if|for|while|case)\s+.*?(then|do|in)/, // Control structures
-      /^\w+=[^=].*$/, // Variable assignments (not comparisons)
-      /^(local|declare|readonly)\s+/,
-      /^(source|\.)\s+/, // Source other scripts
-      /^(exit|return)\s+\d+/, // Exit codes
-    ];
-
-    // Check each line for script indicators
-    for (const line of lines) {
-      const trimmedLine = line.trim();
-
-      if (trimmedLine.length === 0 || trimmedLine.startsWith('#')) {
-        continue; // Skip empty lines and comments
-      }
-
-      if (scriptIndicators.some((pattern) => pattern.test(trimmedLine))) {
-        return true;
-      }
-    }
-
-    return false;
-  }
-
-  private _detectAndWrapShellCommands(_messageId: string, input: string, processed: Set<string>): string {
-    // Pattern to detect standalone shell code blocks that look like commands
-    const shellCommandPattern = /```(bash|sh|shell|zsh|fish|powershell|ps1)\n([\s\S]*?)```/gi;
-
-    return input.replace(shellCommandPattern, (match, language, content) => {
-      const blockHash = this._hashBlock(match);
-
-      if (processed.has(blockHash)) {
-        return match;
-      }
-
-      // Check if this looks like commands to execute rather than a script file
-      if (this._isShellCommand(content, language)) {
-        processed.add(blockHash);
-        logger.debug(`Auto-wrapped shell code block as command: ${language}`);
-
-        return this._wrapInShellAction(content, _messageId);
-      }
-
-      // If it looks like a script, let the file detection patterns handle it
-      return match;
-    });
   }
 
   reset() {

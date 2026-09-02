@@ -18,7 +18,10 @@ function githubHeaders(token: string) {
 }
 
 async function githubJson<T>(url: string, token: string, init?: RequestInit): Promise<T> {
-  const res = await fetch(url, { ...init, headers: { ...githubHeaders(token), ...(init?.headers as Record<string, string>) } });
+  const res = await fetch(url, {
+    ...init,
+    headers: { ...githubHeaders(token), ...(init?.headers as Record<string, string>) },
+  });
   const raw = await res.text();
   let data: unknown = null;
 

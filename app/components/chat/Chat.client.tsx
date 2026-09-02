@@ -24,11 +24,11 @@ import { streamingState } from '~/lib/stores/streaming';
 import { filesToArtifacts } from '~/utils/fileUtils';
 import { supabaseConnection } from '~/lib/stores/supabase';
 import { defaultDesignScheme, type DesignScheme } from '~/types/design-scheme';
-import type { ElementInfo } from '~/components/workbench/Inspector';
 import type { TextUIPart, FileUIPart, Attachment } from '@ai-sdk/ui-utils';
 import { useMCPStore } from '~/lib/stores/mcp';
 import type { LlmErrorAlertType } from '~/types/actions';
 import { useAuth } from '~/lib/hooks/useAuth.client';
+import { loadSelectedRepo, useDeployToGitHub } from '~/lib/hooks/useDeployToGitHub.client';
 
 const logger = createScopedLogger('Chat');
 
@@ -115,14 +115,16 @@ export const ChatImpl = memo(
     const [animationScope, animate] = useAnimate();
     const [apiKeys, setApiKeys] = useState<Record<string, string>>({});
     const [chatMode, setChatMode] = useState<'discuss' | 'build'>('build');
-    const [selectedElement, setSelectedElement] = useState<ElementInfo | null>(null);
     const mcpSettings = useMCPStore((state) => state.settings);
     const { user: authUser } = useAuth();
     const [firebaseIdToken, setFirebaseIdToken] = useState<string | undefined>(undefined);
+    const { deploy: deployToGitHub } = useDeployToGitHub();
 
-    // Jeton Firebase transmis au backend pour les outils IA qui ont besoin de
-    // savoir "qui" pose la question (ex. importer un dépôt GitHub connecté) —
-    // rafraîchi périodiquement car un jeton Firebase expire au bout d'1h.
+    /*
+     * Jeton Firebase transmis au backend pour les outils IA qui ont besoin de
+     * savoir "qui" pose la question (ex. importer un dépôt GitHub connecté) —
+     * rafraîchi périodiquement car un jeton Firebase expire au bout d'1h.
+     */
     useEffect(() => {
       if (!authUser) {
         setFirebaseIdToken(undefined);
@@ -151,6 +153,51 @@ export const ChatImpl = memo(
         clearInterval(interval);
       };
     }, [authUser]);
+
+    /*
+     * Pousse automatiquement vers GitHub les fichiers modifiés par l'IA
+     * pendant ce tour de chat — plus de terminal/aperçu visuel, seul un
+     * message de statut confirme ce qui a été fait (voir plan
+     * "suppression WebContainer/Terminal/Aperçu").
+     */
+    const autoPushToGitHub = useCallback(async () => {
+      try {
+        /*
+         * Le parsing du dernier morceau de la réponse (qui écrit les
+         * derniers fichiers dans FilesStore) est échantillonné à 50ms
+         * (voir processSampledMessages/createSampler) et déclenché par un
+         * useEffect sur `messages`, qui ne s'exécute pas forcément avant ce
+         * callback onFinish (asynchrone par rapport au cycle de rendu React).
+         * On laisse une marge confortable pour que ce dernier parsing ait
+         * eu lieu avant de figer la liste des fichiers touchés.
+         */
+        await new Promise((resolve) => setTimeout(resolve, 150));
+        await workbenchStore.flushPendingActions();
+
+        const touchedFiles = workbenchStore.takeFilesTouchedThisTurn();
+
+        if (touchedFiles.length === 0) {
+          return;
+        }
+
+        const target = loadSelectedRepo();
+
+        if (!target) {
+          return;
+        }
+
+        const preview = touchedFiles.slice(0, 3).join(', ');
+        const suffix = touchedFiles.length > 3 ? '…' : '';
+        const commitMessage = `Aïsso : mise à jour de ${touchedFiles.length} fichier${touchedFiles.length > 1 ? 's' : ''} — ${preview}${suffix}`;
+
+        const result = await deployToGitHub(target, commitMessage);
+
+        toast.success(`Poussé sur GitHub (commit ${result.commitSha.slice(0, 7)}).`);
+      } catch (error) {
+        logger.error('Auto-push GitHub failed', error);
+        toast.error('Le push automatique vers GitHub a échoué.');
+      }
+    }, [deployToGitHub]);
 
     const {
       messages,
@@ -208,16 +255,20 @@ export const ChatImpl = memo(
         }
 
         logger.debug('Finished streaming');
+
+        autoPushToGitHub();
       },
       initialMessages,
       initialInput: Cookies.get(PROMPT_COOKIE_KEY) || '',
     });
 
-    // Écrit dans FilesStore les fichiers qu'un import GitHub automatique
-    // (déclenché côté serveur par une demande en langage naturel, voir
-    // github-auto-import.ts) a préparés pour ce tour de conversation — le
-    // modèle en a déjà eu connaissance pour répondre, ici on les rend
-    // réellement visibles/éditables dans le projet.
+    /*
+     * Écrit dans FilesStore les fichiers qu'un import GitHub automatique
+     * (déclenché côté serveur par une demande en langage naturel, voir
+     * github-auto-import.ts) a préparés pour ce tour de conversation — le
+     * modèle en a déjà eu connaissance pour répondre, ici on les rend
+     * réellement visibles/éditables dans le projet.
+     */
     const processedGithubImportCountRef = useRef(0);
 
     useEffect(() => {
@@ -473,14 +524,7 @@ export const ChatImpl = memo(
         return;
       }
 
-      let finalMessageContent = messageContent;
-
-      if (selectedElement) {
-        console.log('Selected Element:', selectedElement);
-
-        const elementInfo = `<div class=\"__boltSelectedElement__\" data-element='${JSON.stringify(selectedElement)}'>${JSON.stringify(`${selectedElement.displayText}`)}</div>`;
-        finalMessageContent = messageContent + elementInfo;
-      }
+      const finalMessageContent = messageContent;
 
       runAnimation();
 
@@ -750,8 +794,6 @@ export const ChatImpl = memo(
         append={append}
         designScheme={designScheme}
         setDesignScheme={setDesignScheme}
-        selectedElement={selectedElement}
-        setSelectedElement={setSelectedElement}
         addToolResult={addToolResult}
         onWebSearchResult={handleWebSearchResult}
       />

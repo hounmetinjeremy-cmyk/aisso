@@ -108,8 +108,10 @@ export function useGit() {
 
       const data: Record<string, { data: any; encoding?: string }> = {};
 
-      // Recupere les blobs en parallele par petits lots pour rester
-      // raisonnable vis-a-vis des limites de taux de l'API GitHub.
+      /*
+       * Recupere les blobs en parallele par petits lots pour rester
+       * raisonnable vis-a-vis des limites de taux de l'API GitHub.
+       */
       const BATCH_SIZE = 10;
 
       for (let i = 0; i < entries.length; i += BATCH_SIZE) {

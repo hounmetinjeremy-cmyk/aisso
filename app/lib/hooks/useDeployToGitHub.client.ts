@@ -109,7 +109,7 @@ export function useDeployToGitHub() {
       const files = collectProjectFiles();
 
       if (files.length === 0) {
-        throw new Error("Aucun fichier dans le projet actuel.");
+        throw new Error('Aucun fichier dans le projet actuel.');
       }
 
       setDeploying(true);

@@ -38,12 +38,7 @@ export async function logChatMessage(sessionId: string, role: 'user' | 'assistan
   }
 }
 
-export async function logFileChange(
-  sessionId: string,
-  filePath: string,
-  content: string | null,
-  changeSource: string,
-) {
+export async function logFileChange(sessionId: string, filePath: string, content: string | null, changeSource: string) {
   const userId = auth.currentUser?.uid;
 
   if (!userId) {

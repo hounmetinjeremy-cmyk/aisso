@@ -22,12 +22,9 @@ import type { ModelInfo } from '~/lib/modules/llm/types';
 import ProgressCompilation from './ProgressCompilation';
 import type { ProgressAnnotation } from '~/types/context';
 import { SupabaseChatAlert } from '~/components/chat/SupabaseAlert';
-import { expoUrlAtom } from '~/lib/stores/qrCodeStore';
-import { useStore } from '@nanostores/react';
 import { StickToBottom, useStickToBottomContext } from '~/lib/hooks';
 import { ChatBox } from './ChatBox';
 import type { DesignScheme } from '~/types/design-scheme';
-import type { ElementInfo } from '~/components/workbench/Inspector';
 import LlmErrorAlert from './LLMApiAlert';
 
 const TEXTAREA_MIN_HEIGHT = 36;
@@ -74,8 +71,6 @@ interface BaseChatProps {
   append?: (message: Message) => void;
   designScheme?: DesignScheme;
   setDesignScheme?: (scheme: DesignScheme) => void;
-  selectedElement?: ElementInfo | null;
-  setSelectedElement?: (element: ElementInfo | null) => void;
   addToolResult?: ({ toolCallId, result }: { toolCallId: string; result: any }) => void;
   onWebSearchResult?: (result: string) => void;
 }
@@ -121,8 +116,6 @@ export const BaseChat = React.forwardRef<HTMLDivElement, BaseChatProps>(
       append,
       designScheme,
       setDesignScheme,
-      selectedElement,
-      setSelectedElement,
       addToolResult = () => {
         throw new Error('addToolResult not implemented');
       },
@@ -139,14 +132,6 @@ export const BaseChat = React.forwardRef<HTMLDivElement, BaseChatProps>(
     const [transcript, setTranscript] = useState('');
     const [isModelLoading, setIsModelLoading] = useState<string | undefined>('all');
     const [progressAnnotations, setProgressAnnotations] = useState<ProgressAnnotation[]>([]);
-    const expoUrl = useStore(expoUrlAtom);
-    const [qrModalOpen, setQrModalOpen] = useState(false);
-
-    useEffect(() => {
-      if (expoUrl) {
-        setQrModalOpen(true);
-      }
-    }, [expoUrl]);
 
     useEffect(() => {
       if (data) {
@@ -266,7 +251,6 @@ export const BaseChat = React.forwardRef<HTMLDivElement, BaseChatProps>(
     const handleSendMessage = (event: React.UIEvent, messageInput?: string) => {
       if (sendMessage) {
         sendMessage(event, messageInput);
-        setSelectedElement?.(null);
 
         if (recognition) {
           recognition.abort(); // Stop current recognition
@@ -350,11 +334,9 @@ export const BaseChat = React.forwardRef<HTMLDivElement, BaseChatProps>(
           })}
         >
           <div
-            className={classNames(
-              styles.Chat,
-              'flex flex-col flex-grow lg:min-w-[var(--chat-min-width)] h-full',
-              { 'justify-center': !chatStarted },
-            )}
+            className={classNames(styles.Chat, 'flex flex-col flex-grow lg:min-w-[var(--chat-min-width)] h-full', {
+              'justify-center': !chatStarted,
+            })}
           >
             {!chatStarted && (
               <div id="intro" className="flex flex-col items-center gap-3 mx-auto text-center px-4 mb-6 shrink-0">
@@ -463,25 +445,17 @@ export const BaseChat = React.forwardRef<HTMLDivElement, BaseChatProps>(
                   stopListening={stopListening}
                   chatStarted={chatStarted}
                   exportChat={exportChat}
-                  qrModalOpen={qrModalOpen}
-                  setQrModalOpen={setQrModalOpen}
                   handleFileUpload={handleFileUpload}
                   chatMode={chatMode}
                   setChatMode={setChatMode}
                   designScheme={designScheme}
                   setDesignScheme={setDesignScheme}
-                  selectedElement={selectedElement}
-                  setSelectedElement={setSelectedElement}
                   onWebSearchResult={onWebSearchResult}
                 />
               </div>
             </StickToBottom>
           </div>
-          <ClientOnly>
-            {() => (
-              <Workbench chatStarted={chatStarted} isStreaming={isStreaming} setSelectedElement={setSelectedElement} />
-            )}
-          </ClientOnly>
+          <ClientOnly>{() => <Workbench chatStarted={chatStarted} isStreaming={isStreaming} />}</ClientOnly>
         </div>
       </div>
     );

@@ -20,7 +20,6 @@ export interface Shortcut {
 
 export interface Shortcuts {
   toggleTheme: Shortcut;
-  toggleTerminal: Shortcut;
 }
 
 export const URL_CONFIGURABLE_PROVIDERS = ['Ollama', 'LMStudio', 'OpenAILike'];
@@ -37,15 +36,6 @@ export const shortcutsStore = map<Shortcuts>({
     shiftKey: true,
     action: () => toggleTheme(),
     description: 'Toggle theme',
-    isPreventDefault: true,
-  },
-  toggleTerminal: {
-    key: '`',
-    ctrlOrMetaKey: true,
-    action: () => {
-      // This will be handled by the terminal component
-    },
-    description: 'Toggle terminal',
     isPreventDefault: true,
   },
 });

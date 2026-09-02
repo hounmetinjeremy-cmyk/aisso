@@ -1,8 +1,5 @@
 import { useState, useMemo, useCallback, useEffect } from 'react';
-import type { TextSearchOptions, TextSearchOnProgressCallback, WebContainer } from '@webcontainer/api';
 import { workbenchStore } from '~/lib/stores/workbench';
-import { webcontainer } from '~/lib/webcontainer';
-import { WORK_DIR } from '~/utils/constants';
 import { debounce } from '~/utils/debounce';
 
 interface DisplayMatch {
@@ -13,63 +10,63 @@ interface DisplayMatch {
   matchCharEnd: number;
 }
 
-async function performTextSearch(
-  instance: WebContainer,
-  query: string,
-  options: Omit<TextSearchOptions, 'folders'>,
-  onProgress: (results: DisplayMatch[]) => void,
-): Promise<void> {
-  if (!instance || typeof instance.internal?.textSearch !== 'function') {
-    console.error('WebContainer instance not available or internal searchText method is missing/not a function.');
+const EXCLUDED_PATH_SEGMENTS = ['node_modules', '.git', 'dist'];
 
-    return;
-  }
+function isExcludedPath(path: string): boolean {
+  return (
+    EXCLUDED_PATH_SEGMENTS.some((segment) => path.includes(`/${segment}/`)) ||
+    path.endsWith('package-lock.json') ||
+    path.endsWith('.lock')
+  );
+}
 
-  const searchOptions: TextSearchOptions = {
-    ...options,
-    folders: [WORK_DIR],
-  };
+function performTextSearch(query: string, resultLimit: number, onProgress: (results: DisplayMatch[]) => void): void {
+  const files = workbenchStore.files.get();
+  const needle = query.toLowerCase();
+  const displayMatches: DisplayMatch[] = [];
 
-  const progressCallback: TextSearchOnProgressCallback = (filePath: any, apiMatches: any[]) => {
-    const displayMatches: DisplayMatch[] = [];
+  for (const [path, dirent] of Object.entries(files)) {
+    if (!dirent || dirent.type !== 'file' || dirent.isBinary || isExcludedPath(path)) {
+      continue;
+    }
 
-    apiMatches.forEach((apiMatch: { preview: { text: string; matches: string | any[] }; ranges: any[] }) => {
-      const previewLines = apiMatch.preview.text.split('\n');
+    const lines = dirent.content.split('\n');
 
-      apiMatch.ranges.forEach((range: { startLineNumber: number; startColumn: any; endColumn: any }) => {
-        let previewLineText = '(Preview line not found)';
-        let lineIndexInPreview = -1;
+    for (let lineIndex = 0; lineIndex < lines.length; lineIndex++) {
+      const line = lines[lineIndex];
+      const lowerLine = line.toLowerCase();
+      let fromIndex = 0;
 
-        if (apiMatch.preview.matches.length > 0) {
-          const previewStartLine = apiMatch.preview.matches[0].startLineNumber;
-          lineIndexInPreview = range.startLineNumber - previewStartLine;
-        }
+      while (displayMatches.length < resultLimit) {
+        const matchStart = lowerLine.indexOf(needle, fromIndex);
 
-        if (lineIndexInPreview >= 0 && lineIndexInPreview < previewLines.length) {
-          previewLineText = previewLines[lineIndexInPreview];
-        } else {
-          previewLineText = previewLines[0] ?? '(Preview unavailable)';
+        if (matchStart === -1) {
+          break;
         }
 
         displayMatches.push({
-          path: filePath,
-          lineNumber: range.startLineNumber,
-          previewText: previewLineText,
-          matchCharStart: range.startColumn,
-          matchCharEnd: range.endColumn,
+          path,
+          lineNumber: lineIndex + 1,
+          previewText: line,
+          matchCharStart: matchStart,
+          matchCharEnd: matchStart + needle.length,
         });
-      });
-    });
 
-    if (displayMatches.length > 0) {
-      onProgress(displayMatches);
+        fromIndex = matchStart + needle.length;
+      }
+
+      if (displayMatches.length >= resultLimit) {
+        break;
+      }
     }
-  };
 
-  try {
-    await instance.internal.textSearch(query, searchOptions, progressCallback);
-  } catch (error) {
-    console.error('Error during internal text search:', error);
+    if (displayMatches.length >= resultLimit) {
+      break;
+    }
+  }
+
+  if (displayMatches.length > 0) {
+    onProgress(displayMatches);
   }
 }
 
@@ -126,26 +123,11 @@ export function Search() {
     const start = Date.now();
 
     try {
-      const instance = await webcontainer;
-      const options: Omit<TextSearchOptions, 'folders'> = {
-        homeDir: WORK_DIR, // Adjust this path as needed
-        includes: ['**/*.*'],
-        excludes: ['**/node_modules/**', '**/package-lock.json', '**/.git/**', '**/dist/**', '**/*.lock'],
-        gitignore: true,
-        requireGit: false,
-        globalIgnoreFiles: true,
-        ignoreSymlinks: false,
-        resultLimit: 500,
-        isRegex: false,
-        caseSensitive: false,
-        isWordMatch: false,
-      };
-
       const progressHandler = (batchResults: DisplayMatch[]) => {
         setSearchResults((prevResults) => [...prevResults, ...batchResults]);
       };
 
-      await performTextSearch(instance, query, options, progressHandler);
+      performTextSearch(query, 500, progressHandler);
     } catch (error) {
       console.error('Failed to initiate search:', error);
     } finally {

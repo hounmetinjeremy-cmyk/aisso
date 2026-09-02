@@ -3,7 +3,6 @@ import { useStore } from '@nanostores/react';
 import { netlifyConnection } from '~/lib/stores/netlify';
 import { vercelConnection } from '~/lib/stores/vercel';
 import { isGitLabConnected } from '~/lib/stores/gitlabConnection';
-import { workbenchStore } from '~/lib/stores/workbench';
 import { streamingState } from '~/lib/stores/streaming';
 import { classNames } from '~/utils/classNames';
 import { useState } from 'react';
@@ -32,9 +31,12 @@ export const DeployButton = ({
   const netlifyConn = useStore(netlifyConnection);
   const vercelConn = useStore(vercelConnection);
   const gitlabIsConnected = useStore(isGitLabConnected);
-  const [activePreviewIndex] = useState(0);
-  const previews = useStore(workbenchStore.previews);
-  const activePreview = previews[activePreviewIndex];
+
+  /*
+   * Plus d'aperçu live (WebContainer retiré) : ce dropdown legacy restait
+   * déjà toujours désactivé avant ce changement, faute d'aperçu actif.
+   */
+  const activePreview = false;
   const [isDeploying, setIsDeploying] = useState(false);
   const [deployingTo, setDeployingTo] = useState<'netlify' | 'vercel' | 'github' | 'gitlab' | null>(null);
   const isStreaming = useStore(streamingState);

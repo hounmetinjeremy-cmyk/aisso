@@ -2,24 +2,11 @@ import { useStore } from '@nanostores/react';
 import { AnimatePresence, motion } from 'framer-motion';
 import { computed } from 'nanostores';
 import { memo, useEffect, useRef, useState } from 'react';
-import { createHighlighter, type BundledLanguage, type BundledTheme, type HighlighterGeneric } from 'shiki';
 import type { ActionState } from '~/lib/runtime/action-runner';
 import { workbenchStore } from '~/lib/stores/workbench';
 import { classNames } from '~/utils/classNames';
 import { cubicEasingFn } from '~/utils/easings';
 import { WORK_DIR } from '~/utils/constants';
-
-const highlighterOptions = {
-  langs: ['shell'],
-  themes: ['light-plus', 'dark-plus'],
-};
-
-const shellHighlighter: HighlighterGeneric<BundledLanguage, BundledTheme> =
-  import.meta.hot?.data.shellHighlighter ?? (await createHighlighter(highlighterOptions));
-
-if (import.meta.hot) {
-  import.meta.hot.data.shellHighlighter = shellHighlighter;
-}
 
 interface ArtifactProps {
   messageId: string;
@@ -37,10 +24,7 @@ export const Artifact = memo(({ artifactId }: ArtifactProps) => {
   const actions = useStore(
     computed(artifact.runner.actions, (actions) => {
       // Filter out Supabase actions except for migrations
-      return Object.values(actions).filter((action) => {
-        // Exclude actions with type 'supabase' or actions that contain 'supabase' in their content
-        return action.type !== 'supabase' && !(action.type === 'shell' && action.content?.includes('supabase'));
-      });
+      return Object.values(actions).filter((action) => action.type !== 'supabase');
     }),
   );
 
@@ -55,9 +39,7 @@ export const Artifact = memo(({ artifactId }: ArtifactProps) => {
     }
 
     if (actions.length !== 0 && artifact.type === 'bundled') {
-      const finished = !actions.find(
-        (action) => action.status !== 'complete' && !(action.type === 'start' && action.status === 'running'),
-      );
+      const finished = !actions.find((action) => action.status !== 'complete');
 
       if (allActionFinished !== finished) {
         setAllActionFinished(finished);
@@ -157,25 +139,6 @@ export const Artifact = memo(({ artifactId }: ArtifactProps) => {
   );
 });
 
-interface ShellCodeBlockProps {
-  classsName?: string;
-  code: string;
-}
-
-function ShellCodeBlock({ classsName, code }: ShellCodeBlockProps) {
-  return (
-    <div
-      className={classNames('text-xs', classsName)}
-      dangerouslySetInnerHTML={{
-        __html: shellHighlighter.codeToHtml(code, {
-          lang: 'shell',
-          theme: 'dark-plus',
-        }),
-      }}
-    ></div>
-  );
-}
-
 interface ActionListProps {
   actions: ActionState[];
 }
@@ -198,8 +161,7 @@ const ActionList = memo(({ actions }: ActionListProps) => {
     <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }} transition={{ duration: 0.15 }}>
       <ul className="list-none space-y-2.5">
         {actions.map((action, index) => {
-          const { status, type, content } = action;
-          const isLast = index === actions.length - 1;
+          const { status, type } = action;
 
           return (
             <motion.li
@@ -215,13 +177,7 @@ const ActionList = memo(({ actions }: ActionListProps) => {
               <div className="flex items-center gap-1.5 text-sm">
                 <div className={classNames('text-lg', getIconColor(action.status))}>
                   {status === 'running' ? (
-                    <>
-                      {type !== 'start' ? (
-                        <div className="i-svg-spinners:90-ring-with-bg"></div>
-                      ) : (
-                        <div className="i-ph:terminal-window-duotone"></div>
-                      )}
-                    </>
+                    <div className="i-svg-spinners:90-ring-with-bg"></div>
                   ) : status === 'pending' ? (
                     <div className="i-ph:circle-duotone"></div>
                   ) : status === 'complete' ? (
@@ -240,30 +196,8 @@ const ActionList = memo(({ actions }: ActionListProps) => {
                       {action.filePath}
                     </code>
                   </div>
-                ) : type === 'shell' ? (
-                  <div className="flex items-center w-full min-h-[28px]">
-                    <span className="flex-1">Run command</span>
-                  </div>
-                ) : type === 'start' ? (
-                  <a
-                    onClick={(e) => {
-                      e.preventDefault();
-                      workbenchStore.currentView.set('preview');
-                    }}
-                    className="flex items-center w-full min-h-[28px]"
-                  >
-                    <span className="flex-1">Start Application</span>
-                  </a>
                 ) : null}
               </div>
-              {(type === 'shell' || type === 'start') && (
-                <ShellCodeBlock
-                  classsName={classNames('mt-1', {
-                    'mb-3.5': !isLast,
-                  })}
-                  code={content}
-                />
-              )}
             </motion.li>
           );
         })}

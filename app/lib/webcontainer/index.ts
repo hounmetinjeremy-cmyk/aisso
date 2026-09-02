@@ -19,4 +19,4 @@ if (import.meta.hot) {
  * juste le parametre pour rester compatibles) : cette promesse ne sert donc
  * plus qu'a satisfaire ces signatures existantes, sans jamais rien booter.
  */
-export const webcontainer: Promise<unknown> = Promise.resolve({});
+export const webcontainer: Promise<any> = Promise.resolve({});

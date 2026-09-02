@@ -15,7 +15,10 @@ const FIREBASE_PROJECT_ID = 'aisso-d9de3';
 const JWKS_URL = 'https://www.googleapis.com/service_accounts/v1/jwk/securetoken@system.gserviceaccount.com';
 
 function base64UrlToUint8Array(base64Url: string): Uint8Array {
-  const base64 = base64Url.replace(/-/g, '+').replace(/_/g, '/').padEnd(Math.ceil(base64Url.length / 4) * 4, '=');
+  const base64 = base64Url
+    .replace(/-/g, '+')
+    .replace(/_/g, '/')
+    .padEnd(Math.ceil(base64Url.length / 4) * 4, '=');
   const binary = atob(base64);
   const bytes = new Uint8Array(binary.length);
 

@@ -6,7 +6,11 @@ import { ColorSchemeDialog } from '~/components/ui/ColorSchemeDialog';
 import { McpTools } from './MCPTools';
 import { WebSearch } from './WebSearch.client';
 import { SupabaseConnection } from './SupabaseConnection';
-import { useConnectedAccounts, type OAuthProviderId, type ConnectedAccountsStatus } from '~/lib/hooks/useConnectedAccounts.client';
+import {
+  useConnectedAccounts,
+  type OAuthProviderId,
+  type ConnectedAccountsStatus,
+} from '~/lib/hooks/useConnectedAccounts.client';
 import { useDeployToGitHub, loadSelectedRepo, type SelectedRepo } from '~/lib/hooks/useDeployToGitHub.client';
 import type { DesignScheme } from '~/types/design-scheme';
 
@@ -37,7 +41,8 @@ interface ConnectorRowProps {
 
 function ConnectorRow({ provider, status, loading, connecting, connect, onClose }: ConnectorRowProps) {
   const isConnected = provider === 'github' ? status.github : status.vercel;
-  const label = provider === 'github' && status.githubUsername ? `@${status.githubUsername}` : PROVIDER_LABELS[provider];
+  const label =
+    provider === 'github' && status.githubUsername ? `@${status.githubUsername}` : PROVIDER_LABELS[provider];
 
   const handleConnect = () => {
     connect(provider)
@@ -246,8 +251,10 @@ export function PlusToolsMenu(props: PlusToolsMenuProps) {
     return () => document.removeEventListener('mousedown', handleOutsideClick);
   }, [open]);
 
-  // Après le retour du callback OAuth (?connected=github ou ?connect_error=...) :
-  // notifie l'utilisateur, rafraîchit le statut, puis nettoie l'URL.
+  /*
+   * Après le retour du callback OAuth (?connected=github ou ?connect_error=...) :
+   * notifie l'utilisateur, rafraîchit le statut, puis nettoie l'URL.
+   */
   useEffect(() => {
     const params = new URLSearchParams(window.location.search);
     const connected = params.get('connected');
@@ -269,7 +276,6 @@ export function PlusToolsMenu(props: PlusToolsMenuProps) {
 
     const next = `${window.location.pathname}${params.toString() ? `?${params}` : ''}`;
     window.history.replaceState({}, '', next);
-    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
   const close = () => setOpen(false);
@@ -344,7 +350,10 @@ export function PlusToolsMenu(props: PlusToolsMenuProps) {
                 <div className="i-ph:rocket-launch text-lg" />
                 <span>GitHub</span>
                 <div
-                  className={classNames('i-ph:caret-down text-sm ml-auto transition-transform', deployOpen ? 'rotate-180' : '')}
+                  className={classNames(
+                    'i-ph:caret-down text-sm ml-auto transition-transform',
+                    deployOpen ? 'rotate-180' : '',
+                  )}
                 />
               </button>
 
@@ -382,7 +391,12 @@ export function PlusToolsMenu(props: PlusToolsMenuProps) {
           >
             <div className="i-ph:plugs-connected text-lg" />
             <span>Connecteurs</span>
-            <div className={classNames('i-ph:caret-down text-sm ml-auto transition-transform', connectorsOpen ? 'rotate-180' : '')} />
+            <div
+              className={classNames(
+                'i-ph:caret-down text-sm ml-auto transition-transform',
+                connectorsOpen ? 'rotate-180' : '',
+              )}
+            />
           </button>
 
           {connectorsOpen && (
