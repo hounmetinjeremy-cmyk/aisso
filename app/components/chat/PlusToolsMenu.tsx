@@ -36,13 +36,35 @@ interface ConnectorRowProps {
   loading: boolean;
   connecting: OAuthProviderId | null;
   connect: (provider: OAuthProviderId) => Promise<void>;
+  disconnect: (provider: OAuthProviderId) => Promise<void>;
   onClose: () => void;
 }
 
-function ConnectorRow({ provider, status, loading, connecting, connect, onClose }: ConnectorRowProps) {
+const LONG_PRESS_MS = 500;
+const DISCONNECT_CONFIRM_TIMEOUT_MS = 4000;
+
+function ConnectorRow({ provider, status, loading, connecting, connect, disconnect, onClose }: ConnectorRowProps) {
   const isConnected = provider === 'github' ? status.github : status.vercel;
   const label =
     provider === 'github' && status.githubUsername ? `@${status.githubUsername}` : PROVIDER_LABELS[provider];
+
+  // Appui long sur "Connecté" pour révéler "Déconnecter" (évite une déconnexion accidentelle sur un simple tap).
+  const [confirmingDisconnect, setConfirmingDisconnect] = useState(false);
+  const [disconnecting, setDisconnecting] = useState(false);
+  const longPressTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const confirmTimeout = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  useEffect(() => {
+    return () => {
+      if (longPressTimer.current) {
+        clearTimeout(longPressTimer.current);
+      }
+
+      if (confirmTimeout.current) {
+        clearTimeout(confirmTimeout.current);
+      }
+    };
+  }, []);
 
   const handleConnect = () => {
     connect(provider)
@@ -52,16 +74,62 @@ function ConnectorRow({ provider, status, loading, connecting, connect, onClose 
       });
   };
 
+  const startLongPress = () => {
+    longPressTimer.current = setTimeout(() => {
+      setConfirmingDisconnect(true);
+
+      confirmTimeout.current = setTimeout(() => setConfirmingDisconnect(false), DISCONNECT_CONFIRM_TIMEOUT_MS);
+    }, LONG_PRESS_MS);
+  };
+
+  const cancelLongPress = () => {
+    if (longPressTimer.current) {
+      clearTimeout(longPressTimer.current);
+      longPressTimer.current = null;
+    }
+  };
+
+  const handleDisconnect = () => {
+    setDisconnecting(true);
+    disconnect(provider)
+      .then(() => {
+        toast.success(`${PROVIDER_LABELS[provider]} déconnecté.`);
+        setConfirmingDisconnect(false);
+      })
+      .catch((error) => {
+        toast.error(error instanceof Error ? error.message : 'Déconnexion impossible.');
+      })
+      .finally(() => setDisconnecting(false));
+  };
+
   return (
     <div className="flex items-center gap-2.5 pl-8 pr-3 py-1.5 mx-1 text-sm text-bolt-elements-textPrimary">
       <div className={classNames(PROVIDER_ICONS[provider], 'text-lg')} />
       <span>{label}</span>
       <div className="ml-auto">
         {isConnected ? (
-          <span className="flex items-center gap-1 text-green-600 dark:text-green-400 text-xs">
-            <span className="i-ph:check-circle-fill" />
-            Connecté
-          </span>
+          confirmingDisconnect ? (
+            <button
+              type="button"
+              onClick={handleDisconnect}
+              disabled={disconnecting}
+              className="text-xs font-medium px-2.5 py-1 rounded-md bg-red-50 dark:bg-red-500/10 text-red-600 dark:text-red-400 hover:bg-red-100 dark:hover:bg-red-500/20 transition-colors disabled:opacity-60"
+            >
+              {disconnecting ? 'Déconnexion...' : 'Déconnecter'}
+            </button>
+          ) : (
+            <span
+              className="flex items-center gap-1 text-green-600 dark:text-green-400 text-xs select-none cursor-pointer"
+              title="Appui long pour déconnecter"
+              onPointerDown={startLongPress}
+              onPointerUp={cancelLongPress}
+              onPointerLeave={cancelLongPress}
+              onPointerCancel={cancelLongPress}
+            >
+              <span className="i-ph:check-circle-fill" />
+              Connecté
+            </span>
+          )
         ) : (
           <button
             type="button"
@@ -232,6 +300,7 @@ export function PlusToolsMenu(props: PlusToolsMenuProps) {
     loading: connectedLoading,
     connecting: connectingProvider,
     connect: connectProvider,
+    disconnect: disconnectProvider,
     refresh: refreshConnectedAccounts,
   } = useConnectedAccounts();
 
@@ -423,6 +492,7 @@ export function PlusToolsMenu(props: PlusToolsMenuProps) {
                 loading={connectedLoading}
                 connecting={connectingProvider}
                 connect={connectProvider}
+                disconnect={disconnectProvider}
                 onClose={close}
               />
               <ConnectorRow
@@ -431,6 +501,7 @@ export function PlusToolsMenu(props: PlusToolsMenuProps) {
                 loading={connectedLoading}
                 connecting={connectingProvider}
                 connect={connectProvider}
+                disconnect={disconnectProvider}
                 onClose={close}
               />
             </div>

@@ -96,5 +96,34 @@ export function useConnectedAccounts() {
     [user],
   );
 
-  return { status, loading, connecting, connect, refresh };
+  const disconnect = useCallback(
+    async (provider: OAuthProviderId) => {
+      if (!user) {
+        return;
+      }
+
+      const idToken = await user.getIdToken();
+      const res = await fetch(`/api/connect/${provider}/disconnect`, {
+        method: 'POST',
+        headers: { Authorization: `Bearer ${idToken}` },
+      });
+
+      let data: { success?: boolean; error?: string };
+
+      try {
+        data = await res.json<{ success?: boolean; error?: string }>();
+      } catch {
+        throw new Error(`Réponse inattendue du serveur (HTTP ${res.status}).`);
+      }
+
+      if (!res.ok || !data.success) {
+        throw new Error(data.error || 'Impossible de déconnecter ce compte.');
+      }
+
+      await refresh();
+    },
+    [user, refresh],
+  );
+
+  return { status, loading, connecting, connect, disconnect, refresh };
 }
