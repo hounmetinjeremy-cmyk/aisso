@@ -14,21 +14,23 @@ export default class GoogleProvider extends BaseProvider {
 
   staticModels: ModelInfo[] = [
     /*
-     * Essential fallback models - only the most reliable/stable ones
-     * Gemini 1.5 Pro: 2M context, 8K output limit (verified from API docs)
+     * Essential fallback models - only the most reliable/stable ones.
+     * gemini-1.5-pro/flash ont été retirés par Google (l'API renvoie
+     * "model not found") — remplacés par des modèles GA non-thinking,
+     * pour ne pas mélanger ce secours avec le sujet tool-calling/thinking.
      */
     {
-      name: 'gemini-1.5-pro',
-      label: 'Gemini 1.5 Pro',
+      name: 'gemini-2.0-flash',
+      label: 'Gemini 2.0 Flash',
       provider: 'Google',
-      maxTokenAllowed: 2000000,
+      maxTokenAllowed: 1000000,
       maxCompletionTokens: 8192,
     },
 
-    // Gemini 1.5 Flash: 1M context, 8K output limit, fast and cost-effective
+    // Gemini 2.0 Flash-Lite: modèle GA léger, pas de mode "thinking"
     {
-      name: 'gemini-1.5-flash',
-      label: 'Gemini 1.5 Flash',
+      name: 'gemini-2.0-flash-lite',
+      label: 'Gemini 2.0 Flash-Lite',
       provider: 'Google',
       maxTokenAllowed: 1000000,
       maxCompletionTokens: 8192,
