@@ -14,23 +14,25 @@ export default class GoogleProvider extends BaseProvider {
 
   staticModels: ModelInfo[] = [
     /*
-     * Essential fallback models - only the most reliable/stable ones.
-     * gemini-1.5-pro/flash ont été retirés par Google (l'API renvoie
-     * "model not found") — remplacés par des modèles GA non-thinking,
-     * pour ne pas mélanger ce secours avec le sujet tool-calling/thinking.
+     * Essential fallback model - Google retire ses modèles Gemini plus vite
+     * que ce fichier n'est mis à jour : gemini-1.5-pro/flash puis
+     * gemini-2.0-flash ont tour à tour cessé de fonctionner ("model not
+     * found"). gemini-3.6-flash est le remplacement recommandé
+     * explicitement par le message d'erreur renvoyé par l'API Google elle-
+     * même (pas une supposition) au moment de cet correctif.
+     *
+     * ATTENTION : le SDK installé (@ai-sdk/google 0.0.52, ai 4.3.16) est
+     * très en retard sur la version actuelle (respectivement 4.x et 7.x) —
+     * Google mentionne aussi une nouvelle "Interactions API" qui remplace
+     * l'ancienne API generateContent utilisée ici. Si ce modèle échoue à
+     * nouveau, la vraie cause sera probablement que ce SDK ne parle plus du
+     * tout le bon protocole, pas juste un nom de modèle à corriger — une
+     * mise à jour de @ai-sdk/google (et sans doute du paquet ai) sera alors
+     * nécessaire, pas juste un changement de nom ici.
      */
     {
-      name: 'gemini-2.0-flash',
-      label: 'Gemini 2.0 Flash',
-      provider: 'Google',
-      maxTokenAllowed: 1000000,
-      maxCompletionTokens: 8192,
-    },
-
-    // Gemini 2.0 Flash-Lite: modèle GA léger, pas de mode "thinking"
-    {
-      name: 'gemini-2.0-flash-lite',
-      label: 'Gemini 2.0 Flash-Lite',
+      name: 'gemini-3.6-flash',
+      label: 'Gemini 3.6 Flash',
       provider: 'Google',
       maxTokenAllowed: 1000000,
       maxCompletionTokens: 8192,
