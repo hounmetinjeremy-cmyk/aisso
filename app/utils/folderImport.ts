@@ -58,16 +58,7 @@ ${escapeBoltTags(file.content)}
     createdAt: new Date(),
   };
 
-  const messages = [userMessage, filesMessage];
-
-  if (commandsMessage) {
-    messages.push({
-      role: 'user',
-      id: generateId(),
-      content: 'Setup the codebase and Start the application',
-    });
-    messages.push(commandsMessage);
-  }
+  const messages = commandsMessage ? [userMessage, filesMessage, commandsMessage] : [userMessage, filesMessage];
 
   return messages;
 };

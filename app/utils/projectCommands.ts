@@ -13,35 +13,8 @@ interface FileContent {
   path: string;
 }
 
-// Helper function to make any command non-interactive
-function makeNonInteractive(command: string): string {
-  // Set environment variables for non-interactive mode
-  const envVars = 'export CI=true DEBIAN_FRONTEND=noninteractive FORCE_COLOR=0';
-
-  // Common interactive packages and their non-interactive flags
-  const interactivePackages = [
-    { pattern: /npx\s+([^@\s]+@?[^\s]*)\s+init/g, replacement: 'echo "y" | npx --yes $1 init --defaults --yes' },
-    { pattern: /npx\s+create-([^\s]+)/g, replacement: 'npx --yes create-$1 --template default' },
-    { pattern: /npx\s+([^@\s]+@?[^\s]*)\s+add/g, replacement: 'npx --yes $1 add --defaults --yes' },
-    { pattern: /npm\s+install(?!\s+--)/g, replacement: 'npm install --yes --no-audit --no-fund --silent' },
-    { pattern: /yarn\s+add(?!\s+--)/g, replacement: 'yarn add --non-interactive' },
-    { pattern: /pnpm\s+add(?!\s+--)/g, replacement: 'pnpm add --yes' },
-  ];
-
-  let processedCommand = command;
-
-  // Apply replacements for known interactive patterns
-  interactivePackages.forEach(({ pattern, replacement }) => {
-    processedCommand = processedCommand.replace(pattern, replacement);
-  });
-
-  return `${envVars} && ${processedCommand}`;
-}
-
 export async function detectProjectCommands(files: FileContent[]): Promise<ProjectCommands> {
   const hasFile = (name: string) => files.some((f) => f.path.endsWith(name));
-  const hasFileContent = (name: string, content: string) =>
-    files.some((f) => f.path.endsWith(name) && f.content.includes(content));
 
   if (hasFile('package.json')) {
     const packageJsonFile = files.find((f) => f.path.endsWith('package.json'));
@@ -53,42 +26,25 @@ export async function detectProjectCommands(files: FileContent[]): Promise<Proje
     try {
       const packageJson = JSON.parse(packageJsonFile.content);
       const scripts = packageJson?.scripts || {};
-      const dependencies = { ...packageJson.dependencies, ...packageJson.devDependencies };
-
-      // Check if this is a shadcn project
-      const isShadcnProject =
-        hasFileContent('components.json', 'shadcn') ||
-        Object.keys(dependencies).some((dep) => dep.includes('shadcn')) ||
-        hasFile('components.json');
 
       // Check for preferred commands in priority order
       const preferredCommands = ['dev', 'start', 'preview'];
       const availableCommand = preferredCommands.find((cmd) => scripts[cmd]);
-
-      // Build setup command with non-interactive handling
-      let baseSetupCommand = 'npx update-browserslist-db@latest && npm install';
-
-      // Add shadcn init if it's a shadcn project
-      if (isShadcnProject) {
-        baseSetupCommand += ' && npx shadcn@latest init';
-      }
-
-      const setupCommand = makeNonInteractive(baseSetupCommand);
+      const setupCommand = 'npm install';
 
       if (availableCommand) {
         return {
           type: 'Node.js',
           setupCommand,
           startCommand: `npm run ${availableCommand}`,
-          followupMessage: `Found "${availableCommand}" script in package.json. Running "npm run ${availableCommand}" after installation.`,
+          followupMessage: `Projet Node.js détecté avec un script "${availableCommand}" dans package.json.`,
         };
       }
 
       return {
         type: 'Node.js',
         setupCommand,
-        followupMessage:
-          'Would you like me to inspect package.json to determine the available scripts for running this project?',
+        followupMessage: 'Projet Node.js détecté, mais aucun script dev/start/preview trouvé dans package.json.',
       };
     } catch (error) {
       console.error('Error parsing package.json:', error);
@@ -107,31 +63,22 @@ export async function detectProjectCommands(files: FileContent[]): Promise<Proje
   return { type: '', setupCommand: '', followupMessage: '' };
 }
 
+/**
+ * Aïsso n'exécute plus rien (pas de terminal, pas de serveur de dev) : ce
+ * message reste purement informatif, jamais un `<boltAction type="shell">`
+ * — sinon l'historique laisse croire au modèle qu'il a déjà utilisé un
+ * terminal, et il continue d'essayer sur les tours suivants.
+ */
 export function createCommandsMessage(commands: ProjectCommands): Message | null {
   if (!commands.setupCommand && !commands.startCommand) {
     return null;
   }
 
-  let commandString = '';
-
-  if (commands.setupCommand) {
-    commandString += `
-<boltAction type="shell">${commands.setupCommand}</boltAction>`;
-  }
-
-  if (commands.startCommand) {
-    commandString += `
-<boltAction type="start">${commands.startCommand}</boltAction>
-`;
-  }
+  const steps = [commands.setupCommand, commands.startCommand].filter(Boolean).map((cmd) => `- \`${cmd}\``);
 
   return {
     role: 'assistant',
-    content: `
-${commands.followupMessage ? `\n\n${commands.followupMessage}` : ''}
-<boltArtifact id="project-setup" title="Project Setup">
-${commandString}
-</boltArtifact>`,
+    content: `${commands.followupMessage ? `${commands.followupMessage}\n\n` : ''}Une fois les fichiers récupérés, lance ceci depuis ton terminal local pour démarrer le projet :\n${steps.join('\n')}`,
     id: generateId(),
     createdAt: new Date(),
   };
@@ -171,27 +118,4 @@ export function escapeBoltAActionTags(input: string) {
 
 export function escapeBoltTags(input: string) {
   return escapeBoltArtifactTags(escapeBoltAActionTags(input));
-}
-
-// We have this seperate function to simplify the restore snapshot process in to one single artifact.
-export function createCommandActionsString(commands: ProjectCommands): string {
-  if (!commands.setupCommand && !commands.startCommand) {
-    // Return empty string if no commands
-    return '';
-  }
-
-  let commandString = '';
-
-  if (commands.setupCommand) {
-    commandString += `
-<boltAction type="shell">${commands.setupCommand}</boltAction>`;
-  }
-
-  if (commands.startCommand) {
-    commandString += `
-<boltAction type="start">${commands.startCommand}</boltAction>
-`;
-  }
-
-  return commandString;
 }

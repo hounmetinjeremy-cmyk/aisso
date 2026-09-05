@@ -89,16 +89,7 @@ ${escapeBoltTags(file.content)}
             createdAt: new Date(),
           };
 
-          const messages = [filesMessage];
-
-          if (commandsMessage) {
-            messages.push({
-              role: 'user',
-              id: generateId(),
-              content: 'Setup the codebase and Start the application',
-            });
-            messages.push(commandsMessage);
-          }
+          const messages = commandsMessage ? [filesMessage, commandsMessage] : [filesMessage];
 
           await importChat(`Git Project:${repoUrl.split('/').slice(-1)[0]}`, messages, { gitUrl: repoUrl });
         }

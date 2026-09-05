@@ -144,11 +144,7 @@ ${escapeBoltTags(file.content)}
           createdAt: new Date(),
         };
 
-        const messages = [filesMessage];
-
-        if (commandsMessage) {
-          messages.push(commandsMessage);
-        }
+        const messages = commandsMessage ? [filesMessage, commandsMessage] : [filesMessage];
 
         await importChat(`Git Project:${repoUrl.split('/').slice(-1)[0]}`, messages);
       }

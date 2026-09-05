@@ -19,7 +19,6 @@ import {
 } from './db';
 import type { FileMap } from '~/lib/stores/files';
 import type { Snapshot } from './types';
-import { detectProjectCommands, createCommandActionsString } from '~/utils/projectCommands';
 import type { ContextAnnotation } from '~/types/context';
 
 export interface ChatHistoryItem {
@@ -100,23 +99,6 @@ export function useChatHistory() {
             setArchivedMessages(archivedMessages);
 
             if (startingIdx > 0) {
-              const files = Object.entries(validSnapshot?.files || {})
-                .map(([key, value]) => {
-                  if (value?.type !== 'file') {
-                    return null;
-                  }
-
-                  return {
-                    content: value.content,
-                    path: key,
-                  };
-                })
-                .filter((x): x is { content: string; path: string } => !!x); // Type assertion
-              const projectCommands = await detectProjectCommands(files);
-
-              // Call the modified function to get only the command actions string
-              const commandActionsString = createCommandActionsString(projectCommands);
-
               filteredMessages = [
                 {
                   id: generateId(),
@@ -128,7 +110,7 @@ export function useChatHistory() {
                   id: storedMessages.messages[snapshotIndex].id,
                   role: 'assistant',
 
-                  // Combine followup message and the artifact with files and command actions
+                  // Combine the artifact with the restored files
                   content: `Aïsso a restauré ton chat depuis une sauvegarde. Tu peux annuler ce message pour recharger l'historique complet du chat.
                   <boltArtifact id="restored-project-setup" title="Restored Project & Setup" type="bundled">
                   ${Object.entries(snapshot?.files || {})
@@ -144,9 +126,8 @@ ${value.content}
                       }
                     })
                     .join('\n')}
-                  ${commandActionsString} 
                   </boltArtifact>
-                  `, // Added commandActionsString, followupMessage, updated id and title
+                  `,
                   annotations: [
                     'no-store',
                     ...(summary
