@@ -14,21 +14,30 @@ export default class GroqProvider extends BaseProvider {
 
   staticModels: ModelInfo[] = [
     /*
-     * Essential fallback models - only the most stable/reliable ones
-     * Llama 3.1 8B: 128k context, fast and efficient
+     * Essential fallback models. Testé en réel : toute la gamme Llama 3.x
+     * précédente (llama-3.1-8b-instant, llama-3.3-70b-versatile) a été
+     * retirée par Groq ("model does not exist or you do not have access
+     * to it"). Remplacée par la génération Llama 4 (Scout/Maverick),
+     * annoncée par Groq comme disponible dès la sortie de Llama 4.
+     *
+     * Impossible de vérifier ces noms en direct depuis cet environnement
+     * (accès réseau vers api.groq.com bloqué ici, et cette liste n'est de
+     * toute façon qu'un secours — dès qu'une clé API Groq valide est
+     * configurée, getDynamicModels() ci-dessous récupère la vraie liste à
+     * jour). Si ces deux noms sont eux aussi obsolètes, se fier à la liste
+     * déroulante réelle de l'app (alimentée par getDynamicModels) plutôt
+     * qu'à ce secours codé en dur.
      */
     {
-      name: 'llama-3.1-8b-instant',
-      label: 'Llama 3.1 8B',
+      name: 'meta-llama/llama-4-scout-17b-16e-instruct',
+      label: 'Llama 4 Scout',
       provider: 'Groq',
       maxTokenAllowed: 128000,
       maxCompletionTokens: 8192,
     },
-
-    // Llama 3.3 70B: 128k context, most capable model
     {
-      name: 'llama-3.3-70b-versatile',
-      label: 'Llama 3.3 70B',
+      name: 'meta-llama/llama-4-maverick-17b-128e-instruct',
+      label: 'Llama 4 Maverick',
       provider: 'Groq',
       maxTokenAllowed: 128000,
       maxCompletionTokens: 8192,
