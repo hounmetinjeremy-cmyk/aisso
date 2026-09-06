@@ -10,6 +10,7 @@ import { createScopedLogger } from '~/utils/logger';
 import { createFilesContext, extractPropertiesFromMessage } from './utils';
 import { discussPrompt } from '~/lib/common/prompts/discuss-prompt';
 import type { DesignScheme } from '~/types/design-scheme';
+import { sanitizeToolsForGemini } from './sanitize-tools-for-gemini';
 
 export type Messages = Message[];
 
@@ -263,6 +264,15 @@ export async function streamText(props: {
           ),
         )
       : options || {};
+
+  /*
+   * Gemini plante sur certains schémas d'outils MCP standards (tuple `items`, `oneOf`/`anyOf`) —
+   * voir sanitize-tools-for-gemini.ts pour le détail exact du bug. Ne simplifie le schéma que pour
+   * ce provider : les autres (Groq, etc.) reçoivent le schéma MCP original, sans perte de fidélité.
+   */
+  if (currentProvider === 'Google' && (filteredOptions as StreamingOptions).tools) {
+    (filteredOptions as StreamingOptions).tools = sanitizeToolsForGemini((filteredOptions as StreamingOptions).tools!);
+  }
 
   // DEBUG: Log filtered options
   logger.info(
