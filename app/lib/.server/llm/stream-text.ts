@@ -146,6 +146,12 @@ export async function streamText(props: {
     `Token limits for model ${modelDetails.name}: maxTokens=${safeMaxTokens}, maxTokenAllowed=${modelDetails.maxTokenAllowed}, maxCompletionTokens=${modelDetails.maxCompletionTokens}`,
   );
 
+  /*
+   * Reflète dans le prompt les vrais outils passés à _streamText (options.tools, ex. via MCPService) —
+   * sinon le modèle peut être instruit de ne jamais essayer un outil GitHub alors qu'on lui en fournit un.
+   */
+  const mcpToolsAvailable = Object.keys(options?.tools || {}).length > 0;
+
   let systemPrompt =
     PromptLibrary.getPropmtFromLibrary(promptId || 'default', {
       cwd: WORK_DIR,
@@ -161,6 +167,7 @@ export async function streamText(props: {
         isConnected: options?.githubConnection?.isConnected || false,
         username: options?.githubConnection?.username ?? null,
       },
+      mcpToolsAvailable,
     }) ?? getSystemPrompt();
 
   if (chatMode === 'build' && contextFiles && contextOptimization) {
@@ -284,10 +291,13 @@ export async function streamText(props: {
     system:
       chatMode === 'build'
         ? systemPrompt
-        : discussPrompt({
-            isConnected: options?.githubConnection?.isConnected || false,
-            username: options?.githubConnection?.username ?? null,
-          }),
+        : discussPrompt(
+            {
+              isConnected: options?.githubConnection?.isConnected || false,
+              username: options?.githubConnection?.username ?? null,
+            },
+            mcpToolsAvailable,
+          ),
     ...tokenParams,
     messages: convertToCoreMessages(processedMessages as any),
     ...filteredOptions,
