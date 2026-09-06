@@ -168,6 +168,25 @@ export class MCPService {
     return this._mcpToolsPerServer;
   }
 
+  /**
+   * MCPService est un singleton en mémoire — sur Cloudflare Workers, rien ne garantit qu'une requête
+   * /api/chat retombe sur le même isolate que celui où /api/mcp-update-config a été appelé (Settings).
+   * Sans ça, cet isolate n'a jamais vu la config et sert des tools vides silencieusement.
+   *
+   * Appelé au début de chaque requête de chat avec la config envoyée par le client (source de vérité :
+   * localStorage, voir app/lib/stores/mcp.ts) : reconnecte seulement si la config a changé ou si cet
+   * isolate n'a encore aucun outil enregistré, pour ne pas payer une reconnexion réseau à chaque message.
+   */
+  async ensureConfig(config: MCPConfig): Promise<void> {
+    const configChanged = JSON.stringify(config) !== JSON.stringify(this._config);
+    const neverInitialized = Object.keys(this._toolsWithoutExecute).length === 0;
+    const hasServersConfigured = Object.keys(config?.mcpServers || {}).length > 0;
+
+    if (hasServersConfigured && (configChanged || neverInitialized)) {
+      await this.updateConfig(config);
+    }
+  }
+
   private async _createStreamableHTTPClient(
     serverName: string,
     config: StreamableHTTPServerConfig,

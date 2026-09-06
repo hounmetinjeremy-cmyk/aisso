@@ -12,7 +12,7 @@ import { WORK_DIR } from '~/utils/constants';
 import { createSummary } from '~/lib/.server/llm/create-summary';
 import { extractPropertiesFromMessage } from '~/lib/.server/llm/utils';
 import type { DesignScheme } from '~/types/design-scheme';
-import { MCPService } from '~/lib/services/mcpService';
+import { MCPService, type MCPConfig } from '~/lib/services/mcpService';
 import { StreamRecoveryManager } from '~/lib/.server/llm/stream-recovery';
 import { verifyFirebaseIdToken } from '~/lib/firebase-verify.server';
 import { autoImportGithubRepo } from '~/lib/.server/llm/github-auto-import';
@@ -61,6 +61,7 @@ async function chatAction({ context, request }: ActionFunctionArgs) {
     designScheme,
     maxLLMSteps,
     firebaseIdToken,
+    mcpConfig,
   } = await request.json<{
     messages: Messages;
     files: any;
@@ -78,6 +79,7 @@ async function chatAction({ context, request }: ActionFunctionArgs) {
     };
     maxLLMSteps: number;
     firebaseIdToken?: string;
+    mcpConfig?: MCPConfig;
   }>();
 
   /*
@@ -116,6 +118,18 @@ async function chatAction({ context, request }: ActionFunctionArgs) {
 
   try {
     const mcpService = MCPService.getInstance();
+
+    /*
+     * MCPService est un singleton en mémoire par isolate Cloudflare Worker — sans ça, une requête de
+     * chat qui atterrit sur un isolate n'ayant jamais reçu /api/mcp-update-config (Settings) sert des
+     * tools vides silencieusement, et le modèle se comporte comme si aucun serveur MCP n'était configuré.
+     * Reconstruit la config à partir de ce que le client envoie (source de vérité : localStorage) à
+     * chaque requête ; ensureConfig() ne reconnecte que si nécessaire (voir mcpService.ts).
+     */
+    await mcpService.ensureConfig(mcpConfig || { mcpServers: {} }).catch((error) => {
+      logger.error('mcpService.ensureConfig failed', error);
+    });
+
     const totalMessageContent = messages.reduce((acc, message) => acc + message.content, '');
     logger.debug(`Total message length: ${totalMessageContent.split(' ').length}, words`);
 

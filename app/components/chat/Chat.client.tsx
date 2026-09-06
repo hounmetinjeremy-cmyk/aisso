@@ -231,6 +231,7 @@ export const ChatImpl = memo(
           },
         },
         maxLLMSteps: mcpSettings.maxLLMSteps,
+        mcpConfig: mcpSettings.mcpConfig,
         firebaseIdToken,
       },
       sendExtraMessageFields: true,
