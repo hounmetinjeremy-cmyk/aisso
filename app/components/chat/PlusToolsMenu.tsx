@@ -120,11 +120,17 @@ function ConnectorRow({ provider, status, loading, connecting, connect, disconne
           ) : (
             <span
               className="flex items-center gap-1 text-green-600 dark:text-green-400 text-xs select-none cursor-pointer"
+              style={{
+                WebkitUserSelect: 'none',
+                WebkitTouchCallout: 'none',
+                touchAction: 'manipulation',
+              }}
               title="Appui long pour déconnecter"
               onPointerDown={startLongPress}
               onPointerUp={cancelLongPress}
               onPointerLeave={cancelLongPress}
               onPointerCancel={cancelLongPress}
+              onContextMenu={(event) => event.preventDefault()}
             >
               <span className="i-ph:check-circle-fill" />
               Connecté
@@ -165,7 +171,9 @@ function DeployPanel({ onClose }: { onClose: () => void }) {
   useEffect(() => {
     if (!fetchedRef.current) {
       fetchedRef.current = true;
-      void fetchRepos();
+      fetchRepos().catch((error) => {
+        toast.error(error instanceof Error ? error.message : 'Impossible de charger les dépôts.');
+      });
     }
   }, [fetchRepos]);
 
@@ -217,6 +225,14 @@ function DeployPanel({ onClose }: { onClose: () => void }) {
         <div className="flex items-center gap-2 text-sm text-bolt-elements-textSecondary">
           <div className="i-svg-spinners:90-ring-with-bg text-base" />
           Chargement des dépôts...
+        </div>
+      ) : repos && repos.length === 0 ? (
+        <div className="text-sm text-bolt-elements-textSecondary">
+          Aucun dépôt trouvé — vérifie que ton compte GitHub est bien connecté ci-dessus.
+        </div>
+      ) : repos === null && !loadingRepos ? (
+        <div className="text-sm text-red-600 dark:text-red-400">
+          Impossible de charger les dépôts. Vérifie ta connexion GitHub ci-dessus, puis réessaie.
         </div>
       ) : (
         <select
