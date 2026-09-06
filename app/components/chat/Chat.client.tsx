@@ -299,6 +299,16 @@ export const ChatImpl = memo(
               `${payload.owner}/${payload.repo} importé automatiquement (${payload.files.length} fichier${payload.files.length > 1 ? 's' : ''}).`,
             );
           })();
+        } else if (item && typeof item === 'object' && (item as { type?: string }).type === 'githubAutoImportSkipped') {
+          const { reason, message } = item as { reason: string; message?: string };
+          const reasonMessages: Record<string, string> = {
+            not_connected: "Import GitHub demandé, mais ton compte GitHub n'est pas connecté (menu Connecteurs +).",
+            no_repos: 'Import GitHub demandé, mais aucun dépôt trouvé sur ton compte connecté.',
+            no_match: 'Import GitHub demandé, mais aucun dépôt correspondant trouvé — précise le nom exact.',
+            empty: 'Import GitHub demandé, mais le dépôt trouvé ne contient aucun fichier importable.',
+            error: `Import GitHub demandé, mais une erreur est survenue${message ? ` : ${message}` : ''}.`,
+          };
+          toast.warning(reasonMessages[reason] || 'Import GitHub demandé, mais ça a échoué.');
         }
       }
     }, [chatData]);

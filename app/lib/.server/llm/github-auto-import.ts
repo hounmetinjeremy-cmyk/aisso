@@ -160,22 +160,43 @@ export async function autoImportGithubRepo(params: {
     dataStream,
   } = params;
 
-  if (!userId || recentUserMessages.length === 0) {
+  /*
+   * Un verbe d'import détecté ("importe", "clone"...) veut dire que l'utilisateur attend clairement
+   * un résultat visible. Sans ça, chaque branche d'échec ci-dessous retournait silencieusement —
+   * aucune erreur, aucun message, juste rien qui se passe. On informe désormais toujours le client
+   * (dataStream) dès qu'un verbe a été vu mais qu'on ne peut pas importer, en précisant pourquoi.
+   */
+  const triggerDetected = recentUserMessages.some((text) => TRIGGER_RE.test(text));
+
+  const skip = (reason: 'not_connected' | 'no_repos' | 'no_match' | 'empty') => {
+    if (triggerDetected) {
+      dataStream.writeData({ type: 'githubAutoImportSkipped', reason });
+    }
+
     return null;
+  };
+
+  if (!userId || recentUserMessages.length === 0) {
+    return skip('not_connected');
   }
 
   try {
     const token = await getGithubToken(env, userId);
 
     if (!token) {
-      return null;
+      return skip('not_connected');
     }
 
     const repos = await listUserRepos(token);
+
+    if (repos.length === 0) {
+      return skip('no_repos');
+    }
+
     let match = resolveImportTarget(repos, recentUserMessages);
 
     // Recours IA : seulement si un verbe d'import a été vu récemment, pour ne pas payer un appel à chaque message.
-    if (!match && recentUserMessages.some((text) => TRIGGER_RE.test(text))) {
+    if (!match && triggerDetected) {
       match = await classifyIntentWithAI({
         options: repos,
         recentUserMessages,
@@ -189,13 +210,13 @@ export async function autoImportGithubRepo(params: {
     }
 
     if (!match) {
-      return null;
+      return skip('no_match');
     }
 
     const result = await importRepoFiles(token, { owner: match.owner, repo: match.name, branch: match.defaultBranch });
 
     if (result.files.length === 0) {
-      return null;
+      return skip('empty');
     }
 
     for (const file of result.files) {
@@ -214,6 +235,15 @@ export async function autoImportGithubRepo(params: {
     return { owner: match.owner, repo: match.name, branch: match.defaultBranch, fileCount: result.files.length };
   } catch (error) {
     logger.error('autoImportGithubRepo failed', error);
+
+    if (triggerDetected) {
+      dataStream.writeData({
+        type: 'githubAutoImportSkipped',
+        reason: 'error',
+        message: error instanceof Error ? error.message : String(error),
+      });
+    }
+
     return null;
   }
 }
