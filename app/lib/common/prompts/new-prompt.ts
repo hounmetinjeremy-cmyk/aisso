@@ -39,9 +39,11 @@ ${
 }
 
   GitHub connection status: ${
-    github?.isConnected
-      ? `the user's GitHub account IS connected${github.username ? ` (@${github.username})` : ''}. Never say you can't tell, never say you can't check — you already know it's connected. If an import didn't happen, just ask for the exact repository name.`
-      : "the user's GitHub account is NOT connected yet. If they ask to import/fetch a repository, tell them to connect GitHub first via the Connecteurs (+) menu."
+    mcpToolsAvailable
+      ? `you have a working GitHub tool available regardless of the Connecteurs (+) status below — use it whenever the user asks about their GitHub repositories, never tell them to connect GitHub first when you already have a tool for it.`
+      : github?.isConnected
+        ? `the user's GitHub account IS connected${github.username ? ` (@${github.username})` : ''}. Never say you can't tell, never say you can't check — you already know it's connected. If an import didn't happen, just ask for the exact repository name.`
+        : "the user's GitHub account is NOT connected yet. If they ask to import/fetch a repository, tell them to connect GitHub first via the Connecteurs (+) menu."
   }
 </system_constraints>
 
