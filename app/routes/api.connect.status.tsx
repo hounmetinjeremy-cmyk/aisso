@@ -3,6 +3,26 @@ import { verifyFirebaseIdToken } from '~/lib/firebase-verify.server';
 import { getSupabaseAdmin } from '~/lib/supabase-admin.server';
 
 /**
+ * Un jeton présent en base ne veut pas dire qu'il fonctionne encore (révoqué
+ * côté GitHub, expiré...) — testé en réel : le badge "Connecté" restait vert
+ * alors que /api/deploy/repos échouait en 401 avec ce même jeton, sans aucun
+ * moyen pour l'utilisateur de comprendre pourquoi. Une requête légère vers
+ * l'API GitHub valide que le jeton marche vraiment avant de dire "connecté".
+ */
+async function isGithubTokenValid(token: string): Promise<boolean> {
+  try {
+    const response = await fetch('https://api.github.com/user', {
+      headers: { Authorization: `Bearer ${token}`, 'User-Agent': 'aisso' },
+    });
+
+    return response.ok;
+  } catch {
+    // Erreur réseau ponctuelle : ne pas afficher "déconnecté" à tort pour ça.
+    return true;
+  }
+}
+
+/**
  * Indique quels comptes (GitHub/Vercel) sont déjà connectés pour l'utilisateur
  * courant, sans jamais renvoyer les jetons eux-mêmes au client.
  */
@@ -30,9 +50,12 @@ export const loader: LoaderFunction = async ({ request, context }) => {
       .eq('user_id', userId)
       .maybeSingle();
 
+    const githubToken = data?.github_access_token as string | undefined;
+    const githubConnected = Boolean(githubToken) && (await isGithubTokenValid(githubToken!));
+
     return Response.json({
-      github: Boolean(data?.github_access_token),
-      githubUsername: data?.github_username ?? null,
+      github: githubConnected,
+      githubUsername: githubConnected ? (data?.github_username ?? null) : null,
       vercel: Boolean(data?.vercel_access_token),
       vercelTeamId: data?.vercel_team_id ?? null,
     });
