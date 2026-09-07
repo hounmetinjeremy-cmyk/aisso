@@ -1,75 +1,114 @@
 import type { ToolSet } from 'ai';
 
 /**
- * L'API Gemini n'accepte qu'un sous-ensemble restreint de JSON Schema pour les déclarations de
- * fonctions (proto OpenAPI-like) : pas de tuple-typing (`items` sous forme de tableau), pas de
- * `oneOf`/`anyOf`/`allOf`. Le convertisseur de @ai-sdk/google@0.0.52
- * (convert-json-schema-to-openapi-schema.ts) recopie pourtant ces constructions telles quelles —
- * `items: [...]` devient un TABLEAU de schémas au lieu d'un schéma unique — ce qui plante côté
- * Gemini avec "Proto field is not repeating, cannot start list", puisque son champ `items` attend
- * un seul message Schema, jamais une liste.
+ * L'API Gemini n'accepte qu'un sous-ensemble restreint et strict de JSON Schema pour les
+ * déclarations de fonctions (un proto OpenAPI-like) — pas de tuple-typing (`items` tableau), pas
+ * de `oneOf`/`anyOf`/`allOf`, et toute clé qu'il ne reconnaît pas à un endroit donné fait planter
+ * la requête entière avec "Unknown name ... Proto field is not repeating, cannot start list".
  *
- * Les outils MCP (ex. le serveur GitHub officiel) exposent leur schéma en JSON Schema standard,
- * qui utilise couramment ces constructions (types optionnels via `anyOf`, tuples via `items`
- * tableau) — d'où le plantage observé uniquement avec des outils MCP, jamais avec les schémas
- * internes de l'app.
+ * Testé en réel à deux reprises : une première version de ce fichier "patchait" au cas par cas
+ * (tuple items → premier élément, oneOf/anyOf → première branche) mais laissait passer telles
+ * quelles toutes les autres clés du schéma d'origine — la moindre construction non anticipée
+ * (une autre combinaison de mots-clés JSON Schema, à une autre profondeur) faisait planter
+ * exactement pareil. Cette version reconstruit le schéma entièrement à partir d'une liste blanche
+ * de clés connues sûres, plutôt que de essayer de deviner chaque cas problématique un par un —
+ * aucune clé inconnue ne peut donc jamais s'y glisser.
  *
- * Cette fonction simplifie best-effort le schéma pour rester compatible Gemini : collapse chaque
- * union/tuple sur sa première branche plutôt que de la rejeter. N'est appliquée qu'aux outils
- * envoyés à un modèle Google (voir stream-text.ts) — les autres providers reçoivent le schéma
- * MCP original, sans perte de fidélité.
+ * N'est appliquée qu'aux outils envoyés à un modèle Google (voir stream-text.ts) — les autres
+ * providers reçoivent le schéma MCP original, sans perte de fidélité.
  */
-function sanitizeSchemaForGemini(schema: unknown): unknown {
-  if (Array.isArray(schema)) {
-    return schema.map(sanitizeSchemaForGemini);
+const GEMINI_SAFE_TYPES = new Set(['string', 'number', 'integer', 'boolean', 'array', 'object']);
+const MAX_DEPTH = 12;
+
+function sanitizeSchemaForGemini(schema: unknown, depth = 0): Record<string, unknown> {
+  if (depth > MAX_DEPTH || !schema || typeof schema !== 'object' || Array.isArray(schema)) {
+    return { type: 'string' };
   }
 
-  if (!schema || typeof schema !== 'object') {
-    return schema;
-  }
+  const raw = schema as Record<string, unknown>;
 
-  const { oneOf, anyOf, allOf, items, properties, ...rest } = schema as Record<string, any>;
-  const result: Record<string, any> = { ...rest };
+  /*
+   * Union (oneOf/anyOf) : on ne garde que la première branche, fusionnée sous le schéma courant
+   * (les clés déjà présentes sur `raw`, ex. `description`, gardent la priorité).
+   */
+  const union = (Array.isArray(raw.oneOf) && raw.oneOf) || (Array.isArray(raw.anyOf) && raw.anyOf);
+  let effective: Record<string, unknown> = union && union.length > 0 ? { ...(union[0] as object), ...raw } : raw;
 
-  if (properties && typeof properties === 'object') {
-    result.properties = Object.fromEntries(
-      Object.entries(properties).map(([key, value]) => [key, sanitizeSchemaForGemini(value)]),
-    );
-  }
-
-  if (items !== undefined) {
-    // Tuple-typing (`items` tableau) n'existe pas côté Gemini : on ne garde que le premier élément.
-    result.items = Array.isArray(items)
-      ? sanitizeSchemaForGemini(items[0] ?? { type: 'string' })
-      : sanitizeSchemaForGemini(items);
-  }
-
-  if (Array.isArray(allOf) && allOf.length > 0) {
-    for (const sub of allOf) {
-      const sanitizedSub = sanitizeSchemaForGemini(sub) as Record<string, any>;
-      Object.assign(result, sanitizedSub, {
-        properties: { ...(result.properties || {}), ...(sanitizedSub.properties || {}) },
-      });
-    }
-  }
-
-  const union =
-    (Array.isArray(oneOf) && oneOf.length > 0 && oneOf) || (Array.isArray(anyOf) && anyOf.length > 0 && anyOf);
-
-  if (union) {
-    const first = sanitizeSchemaForGemini(union[0]) as Record<string, any>;
-
-    // Les champs déjà présents sur ce schéma (ex. `description` du paramètre parent) gardent la priorité.
-    for (const [key, value] of Object.entries(first)) {
-      if (!(key in result)) {
-        result[key] = value;
+  // allOf : fusion superficielle de toutes les branches (propriétés incluses).
+  if (Array.isArray(raw.allOf)) {
+    for (const sub of raw.allOf) {
+      if (sub && typeof sub === 'object') {
+        const subObj = sub as Record<string, unknown>;
+        effective = {
+          ...effective,
+          ...subObj,
+          properties: { ...((effective.properties as object) || {}), ...((subObj.properties as object) || {}) },
+        };
       }
     }
   }
 
-  if (!result.type) {
-    // Gemini exige un `type` sur chaque schéma ; sans info utilisable, on retombe sur une string.
-    result.type = 'string';
+  // `type` peut être un tableau (ex. ["string", "null"]) en JSON Schema standard.
+  let type = effective.type;
+
+  if (Array.isArray(type)) {
+    type = type.find((t) => t !== 'null');
+  }
+
+  if (typeof type !== 'string' || !GEMINI_SAFE_TYPES.has(type)) {
+    // Pas de type utilisable : déduit depuis la forme du schéma plutôt que de deviner au hasard.
+    type =
+      effective.properties && typeof effective.properties === 'object'
+        ? 'object'
+        : effective.items
+          ? 'array'
+          : 'string';
+  }
+
+  const result: Record<string, unknown> = { type };
+
+  if (typeof effective.description === 'string') {
+    result.description = effective.description;
+  }
+
+  if (Array.isArray(effective.enum)) {
+    result.enum = effective.enum;
+  }
+
+  if (typeof effective.format === 'string') {
+    result.format = effective.format;
+  }
+
+  if (type === 'object') {
+    const properties = effective.properties;
+    const safeProperties: Record<string, unknown> =
+      properties && typeof properties === 'object' && !Array.isArray(properties)
+        ? Object.fromEntries(
+            Object.entries(properties as object).map(([key, value]) => [
+              key,
+              sanitizeSchemaForGemini(value, depth + 1),
+            ]),
+          )
+        : {};
+
+    result.properties = safeProperties;
+
+    if (Array.isArray(effective.required)) {
+      const requiredNames = (effective.required as unknown[]).filter(
+        (name): name is string => typeof name === 'string' && name in safeProperties,
+      );
+
+      if (requiredNames.length > 0) {
+        result.required = requiredNames;
+      }
+    }
+  }
+
+  if (type === 'array') {
+    const items = effective.items;
+
+    // Tuple-typing (`items` tableau) n'existe pas côté Gemini : on ne garde que le premier élément.
+    result.items = sanitizeSchemaForGemini(Array.isArray(items) ? items[0] : items, depth + 1);
   }
 
   return result;
