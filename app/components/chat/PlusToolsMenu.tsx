@@ -164,6 +164,18 @@ function DeployPanel({ onClose }: { onClose: () => void }) {
     }
   }, [fetchRepos]);
 
+  /*
+   * Testé en réel : après avoir corrigé la connexion GitHub (jeton invalide puis reconnexion),
+   * cette section restait bloquée sur l'ancienne erreur — le chargement des dépôts n'était tenté
+   * qu'une seule fois au montage (fetchedRef), sans jamais se relancer automatiquement quand la
+   * connexion change. Bouton "Réessayer" explicite plutôt que de deviner quand relancer tout seul.
+   */
+  const handleRetry = () => {
+    fetchRepos().catch((error) => {
+      toast.error(error instanceof Error ? error.message : 'Impossible de charger les dépôts.');
+    });
+  };
+
   const handleSelectChange = (fullName: string) => {
     const repo = repos?.find((r) => r.fullName === fullName);
 
@@ -218,8 +230,17 @@ function DeployPanel({ onClose }: { onClose: () => void }) {
           Aucun dépôt trouvé — vérifie que ton compte GitHub est bien connecté ci-dessus.
         </div>
       ) : repos === null && !loadingRepos ? (
-        <div className="text-sm text-red-600 dark:text-red-400">
-          Impossible de charger les dépôts. Vérifie ta connexion GitHub ci-dessus, puis réessaie.
+        <div className="flex flex-col gap-1.5">
+          <div className="text-sm text-red-600 dark:text-red-400">
+            Impossible de charger les dépôts. Vérifie ta connexion GitHub ci-dessus, puis réessaie.
+          </div>
+          <button
+            type="button"
+            onClick={handleRetry}
+            className="self-start text-xs font-medium px-2.5 py-1 rounded-md border border-bolt-elements-borderColor text-bolt-elements-textPrimary hover:bg-bolt-elements-item-backgroundActive transition-colors"
+          >
+            Réessayer
+          </button>
         </div>
       ) : (
         <select
