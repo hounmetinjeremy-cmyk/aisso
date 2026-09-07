@@ -29,8 +29,25 @@ export default {
   async fetch(request, env, ctx): Promise<Response> {
     try {
       const loadContext = getLoadContext({ request, env, ctx });
+      const response = await requestHandler(request, loadContext);
 
-      return await requestHandler(request, loadContext);
+      /*
+       * Les fichiers statiques hachés (JS/CSS dans build/client) sont servis directement par le
+       * binding [assets] de Cloudflare, jamais par ce Worker — leur cache long-terme n'est pas
+       * concerné ici. Mais les pages HTML rendues par Remix (ce fetch) n'avaient aucun en-tête de
+       * cache explicite : testé en réel, un correctif tout juste déployé continuait à s'afficher
+       * avec l'ancien code, obligeant à un rechargement forcé à chaque fois. On force ces réponses
+       * HTML à ne jamais être mises en cache (navigateur ou intermédiaire), pour que chaque
+       * déploiement soit visible immédiatement à la prochaine requête.
+       */
+      if (response.headers.get('Content-Type')?.includes('text/html')) {
+        const freshHeaders = new Headers(response.headers);
+        freshHeaders.set('Cache-Control', 'no-store, must-revalidate');
+
+        return new Response(response.body, { status: response.status, headers: freshHeaders });
+      }
+
+      return response;
     } catch (error) {
       console.error('[worker] erreur non gérée :', error);
       return new Response('Erreur interne du serveur', { status: 500 });
