@@ -89,14 +89,19 @@ class GitHubOAuthProvider implements OAuthProvider {
   }
 
   /**
-   * Révoque le jeton auprès de GitHub (pas seulement oublié en base côté Aïsso) — sans ça,
-   * "Déconnecter" ne faisait qu'oublier le jeton localement, en le laissant valide indéfiniment
-   * côté GitHub. https://docs.github.com/en/rest/apps/oauth-applications#delete-an-app-token
+   * Révoque le GRANT auprès de GitHub (pas juste le jeton) — testé en réel : révoquer seulement le
+   * jeton (endpoint .../token) laisse l'app "Aisso" toujours listée comme autorisée dans le compte
+   * GitHub de l'utilisateur, donc un nouveau clic sur "Connecter" réautorise SILENCIEUSEMENT (GitHub
+   * ne réaffiche l'écran de consentement que si l'app n'est plus autorisée du tout) — aucune
+   * interface ne s'affiche, juste une redirection instantanée, ce qui donnait l'impression que rien
+   * ne se passait. Révoquer le grant entier invalide aussi tous ses jetons et force GitHub à
+   * réafficher l'écran d'autorisation à la prochaine connexion.
+   * https://docs.github.com/en/rest/apps/oauth-applications#delete-an-app-authorization
    */
   async revokeToken(accessToken: string): Promise<void> {
     const credentials = btoa(`${this.clientId}:${this.clientSecret}`);
 
-    await fetch(`https://api.github.com/applications/${this.clientId}/token`, {
+    await fetch(`https://api.github.com/applications/${this.clientId}/grant`, {
       method: 'DELETE',
       headers: {
         Authorization: `Basic ${credentials}`,
