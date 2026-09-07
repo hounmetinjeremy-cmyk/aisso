@@ -14,6 +14,12 @@ export interface OAuthTokenResult {
 export interface OAuthProvider {
   buildAuthorizeUrl(params: { redirectUri: string; state: string }): string;
   exchangeCode(params: { code: string; redirectUri: string }): Promise<OAuthTokenResult>;
+
+  /**
+   * Révoque le jeton côté fournisseur (pas juste oublié localement) — optionnel, tous les
+   * fournisseurs n'exposent pas d'endpoint de révocation standard.
+   */
+  revokeToken?(accessToken: string): Promise<void>;
 }
 
 /* eslint-disable @typescript-eslint/naming-convention -- paramètres de propriété nommés selon la convention OAuth (clientId/clientSecret), pas besoin de préfixe underscore */
@@ -80,6 +86,26 @@ class GitHubOAuthProvider implements OAuthProvider {
     }
 
     return { accessToken: data.access_token, accountLabel };
+  }
+
+  /**
+   * Révoque le jeton auprès de GitHub (pas seulement oublié en base côté Aïsso) — sans ça,
+   * "Déconnecter" ne faisait qu'oublier le jeton localement, en le laissant valide indéfiniment
+   * côté GitHub. https://docs.github.com/en/rest/apps/oauth-applications#delete-an-app-token
+   */
+  async revokeToken(accessToken: string): Promise<void> {
+    const credentials = btoa(`${this.clientId}:${this.clientSecret}`);
+
+    await fetch(`https://api.github.com/applications/${this.clientId}/token`, {
+      method: 'DELETE',
+      headers: {
+        Authorization: `Basic ${credentials}`,
+        Accept: 'application/vnd.github+json',
+        'Content-Type': 'application/json',
+        'User-Agent': 'Aisso-App',
+      },
+      body: JSON.stringify({ access_token: accessToken }),
+    });
   }
 }
 

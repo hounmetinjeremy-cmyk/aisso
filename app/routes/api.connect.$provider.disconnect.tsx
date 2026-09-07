@@ -1,6 +1,7 @@
 import type { ActionFunction } from '@remix-run/cloudflare';
 import { verifyFirebaseIdToken } from '~/lib/firebase-verify.server';
 import { getSupabaseAdmin } from '~/lib/supabase-admin.server';
+import { getOAuthProvider } from '~/lib/oauth-providers.server';
 
 const ALLOWED_PROVIDERS = ['github', 'vercel'] as const;
 
@@ -35,6 +36,29 @@ export const action: ActionFunction = async ({ request, context, params }) => {
     }
 
     const supabase = getSupabaseAdmin(env.SUPABASE_SERVICE_ROLE_KEY);
+
+    const tokenColumn = provider === 'github' ? 'github_access_token' : 'vercel_access_token';
+    const { data: existing } = await supabase
+      .from('connected_accounts')
+      .select(tokenColumn)
+      .eq('user_id', userId)
+      .maybeSingle();
+
+    const existingToken = (existing as Record<string, string | null> | null)?.[tokenColumn];
+
+    /*
+     * Révocation best-effort côté fournisseur : "Déconnecter" ne se contentait avant que
+     * d'oublier le jeton localement, en le laissant valide indéfiniment côté GitHub. Une
+     * révocation échouée ne doit jamais empêcher l'utilisateur de se déconnecter côté Aïsso.
+     */
+    if (existingToken) {
+      try {
+        const oauthProvider = getOAuthProvider(provider, env);
+        await oauthProvider.revokeToken?.(existingToken);
+      } catch {
+        // Non bloquant.
+      }
+    }
 
     const clearedColumns =
       provider === 'github'

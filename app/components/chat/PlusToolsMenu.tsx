@@ -40,7 +40,6 @@ interface ConnectorRowProps {
   onClose: () => void;
 }
 
-const LONG_PRESS_MS = 500;
 const DISCONNECT_CONFIRM_TIMEOUT_MS = 4000;
 
 function ConnectorRow({ provider, status, loading, connecting, connect, disconnect, onClose }: ConnectorRowProps) {
@@ -48,18 +47,19 @@ function ConnectorRow({ provider, status, loading, connecting, connect, disconne
   const label =
     provider === 'github' && status.githubUsername ? `@${status.githubUsername}` : PROVIDER_LABELS[provider];
 
-  // Appui long sur "Connecté" pour révéler "Déconnecter" (évite une déconnexion accidentelle sur un simple tap).
+  /*
+   * Ancienne version : appui long (pointerdown/up minuté) sur "Connecté" pour révéler
+   * "Déconnecter", pour éviter une déconnexion accidentelle sur un simple tap. Testé en réel :
+   * peu fiable sur mobile — le menu contextuel natif du navigateur (Copier/Partager) apparaissait
+   * souvent à la place du minuteur JS. Remplacé par un petit bouton toujours visible : un premier
+   * tap explicite révèle la confirmation, sans dépendre d'un geste fragile à chronométrer.
+   */
   const [confirmingDisconnect, setConfirmingDisconnect] = useState(false);
   const [disconnecting, setDisconnecting] = useState(false);
-  const longPressTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const confirmTimeout = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   useEffect(() => {
     return () => {
-      if (longPressTimer.current) {
-        clearTimeout(longPressTimer.current);
-      }
-
       if (confirmTimeout.current) {
         clearTimeout(confirmTimeout.current);
       }
@@ -74,19 +74,9 @@ function ConnectorRow({ provider, status, loading, connecting, connect, disconne
       });
   };
 
-  const startLongPress = () => {
-    longPressTimer.current = setTimeout(() => {
-      setConfirmingDisconnect(true);
-
-      confirmTimeout.current = setTimeout(() => setConfirmingDisconnect(false), DISCONNECT_CONFIRM_TIMEOUT_MS);
-    }, LONG_PRESS_MS);
-  };
-
-  const cancelLongPress = () => {
-    if (longPressTimer.current) {
-      clearTimeout(longPressTimer.current);
-      longPressTimer.current = null;
-    }
+  const askConfirmDisconnect = () => {
+    setConfirmingDisconnect(true);
+    confirmTimeout.current = setTimeout(() => setConfirmingDisconnect(false), DISCONNECT_CONFIRM_TIMEOUT_MS);
   };
 
   const handleDisconnect = () => {
@@ -118,23 +108,20 @@ function ConnectorRow({ provider, status, loading, connecting, connect, disconne
               {disconnecting ? 'Déconnexion...' : 'Déconnecter'}
             </button>
           ) : (
-            <span
-              className="flex items-center gap-1 text-green-600 dark:text-green-400 text-xs select-none cursor-pointer"
-              style={{
-                WebkitUserSelect: 'none',
-                WebkitTouchCallout: 'none',
-                touchAction: 'manipulation',
-              }}
-              title="Appui long pour déconnecter"
-              onPointerDown={startLongPress}
-              onPointerUp={cancelLongPress}
-              onPointerLeave={cancelLongPress}
-              onPointerCancel={cancelLongPress}
-              onContextMenu={(event) => event.preventDefault()}
-            >
-              <span className="i-ph:check-circle-fill" />
-              Connecté
-            </span>
+            <div className="flex items-center gap-2">
+              <span className="flex items-center gap-1 text-green-600 dark:text-green-400 text-xs">
+                <span className="i-ph:check-circle-fill" />
+                Connecté
+              </span>
+              <button
+                type="button"
+                onClick={askConfirmDisconnect}
+                title="Déconnecter"
+                className="flex items-center justify-center w-5 h-5 rounded-full text-bolt-elements-textSecondary hover:text-red-600 dark:hover:text-red-400 hover:bg-red-50 dark:hover:bg-red-500/10 transition-colors"
+              >
+                <span className="i-ph:x-bold text-xs" />
+              </button>
+            </div>
           )
         ) : (
           <button
