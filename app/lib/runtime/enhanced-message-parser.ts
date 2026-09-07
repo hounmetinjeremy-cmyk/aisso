@@ -12,6 +12,19 @@ export class EnhancedStreamingMessageParser extends StreamingMessageParser {
   private _processedCodeBlocks = new Map<string, Set<string>>();
   private _artifactCounter = 0;
 
+  /*
+   * Chat.client.tsx reparse TOUS les messages de la conversation a chaque
+   * chunk recu du message en cours de streaming (voir useMessageParser.ts).
+   * Sans ce cache, les regexes ci-dessous (couteuses, plusieurs avec
+   * `[\s\S]*?`) tournaient a nouveau sur le texte integral de chaque
+   * ancien message, a chaque chunk du nouveau message — un cout qui
+   * grandit avec la conversation ET avec la longueur de la reponse en
+   * cours, jusqu'a bloquer l'onglet le temps que le stream se termine.
+   * Un message deja vu avec un contenu inchange n'a plus besoin d'etre
+   * rescanne : on retourne directement le resultat du parseur de base.
+   */
+  private _lastScannedInput = new Map<string, string>();
+
   constructor(options: StreamingMessageParserOptions = {}) {
     super(options);
   }
@@ -20,18 +33,30 @@ export class EnhancedStreamingMessageParser extends StreamingMessageParser {
     // First try the normal parsing
     let output = super.parse(messageId, input);
 
+    if (this._lastScannedInput.get(messageId) === input) {
+      return output;
+    }
+
+    this._lastScannedInput.set(messageId, input);
+
     // If no artifacts were detected, check for code blocks that should be files
     if (!this._hasDetectedArtifacts(input)) {
       const enhancedInput = this._detectAndWrapCodeBlocks(messageId, input);
 
       if (enhancedInput !== input) {
-        // Reset and reparse with enhanced input
-        this.reset();
+        // Reparse ce seul message avec le contenu enrichi (ne touche pas aux autres messages)
+        this.resetMessage(messageId);
         output = super.parse(messageId, enhancedInput);
       }
     }
 
     return output;
+  }
+
+  resetMessage(messageId: string): void {
+    super.resetMessage(messageId);
+    this._processedCodeBlocks.delete(messageId);
+    this._lastScannedInput.delete(messageId);
   }
 
   private _hasDetectedArtifacts(input: string): boolean {
@@ -83,8 +108,22 @@ export class EnhancedStreamingMessageParser extends StreamingMessageParser {
       },
     ];
 
+    /*
+     * Ces 5 patterns exigent tous une fence ``` fermante. Tant qu'un bloc de
+     * code est encore en cours de streaming (fence ouvrante sans fermante),
+     * aucun ne peut matcher — mais les quantificateurs paresseux (`[\s\S]*?`)
+     * forcent quand meme le moteur regex a essayer depuis chaque position du
+     * texte avant d'abandonner. Sur un texte qui grandit a chaque token recu,
+     * ca degenere vite en travail quadratique voire pire, repete a chaque
+     * chunk. On ne tente ces patterns que quand toutes les fences du texte
+     * sont fermees (nombre pair de ```), ce qui borne le nombre de tentatives
+     * a une par bloc de code effectivement termine plutot qu'une par token.
+     */
+    const fenceCount = (enhanced.match(/```/g) || []).length;
+    const hasOnlyClosedFences = fenceCount > 0 && fenceCount % 2 === 0;
+
     // Process each pattern in order of likelihood
-    for (const pattern of patterns) {
+    for (const pattern of hasOnlyClosedFences ? patterns : []) {
       enhanced = enhanced.replace(pattern.regex, (match, ...args) => {
         // Skip if already processed
         const blockHash = this._hashBlock(match);

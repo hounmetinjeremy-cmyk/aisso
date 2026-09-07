@@ -335,6 +335,22 @@ export class StreamingMessageParser {
     this.#messages.clear();
   }
 
+  /**
+   * Efface le suivi d'un seul message, sans toucher aux autres.
+   *
+   * `reset()` vide TOUT `#messages` : appele a tort pendant le streaming (ex.
+   * a chaque nouveau bloc detecte par EnhancedStreamingMessageParser), il
+   * fait perdre la position deja avancee de tous les autres messages de la
+   * conversation, qui repartent alors de zero au prochain appel. Sur une
+   * conversation longue, ca transforme un cout lineaire par message en cout
+   * qui explose a chaque nouveau chunk du message en cours de streaming —
+   * observe en reel comme un blocage complet de l'interface le temps que le
+   * stream se termine.
+   */
+  resetMessage(messageId: string) {
+    this.#messages.delete(messageId);
+  }
+
   #parseActionTag(input: string, actionOpenIndex: number, actionEndIndex: number) {
     const actionTag = input.slice(actionOpenIndex, actionEndIndex + 1);
 
