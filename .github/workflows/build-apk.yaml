@@ -1,0 +1,65 @@
+name: Build Android APK
+
+# Manuel ou sur push main : contrairement au deploy Cloudflare (qui doit
+# suivre chaque commit), l'APK n'a besoin d'etre reconstruit que quand on
+# veut le tester/distribuer — mais on le fait quand meme automatiquement sur
+# main pour qu'un APK a jour soit toujours disponible sans etape manuelle.
+on:
+  push:
+    branches:
+      - main
+  workflow_dispatch: {}
+
+jobs:
+  build-apk:
+    name: Build debug APK
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - uses: pnpm/action-setup@v4
+        with:
+          version: '9.14.4'
+          run_install: false
+
+      - name: Set Node.js version
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20.18.0'
+          cache: pnpm
+
+      - name: Set up JDK
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '21'
+
+      - name: Set up Android SDK
+        uses: android-actions/setup-android@v3
+
+      - name: Install dependencies
+        env:
+          ELECTRON_SKIP_BINARY_DOWNLOAD: '1'
+        run: pnpm install
+
+      - name: Build web app (required by Capacitor's webDir, even though the APK loads the live Worker URL at runtime)
+        env:
+          ELECTRON_SKIP_BINARY_DOWNLOAD: '1'
+        run: pnpm run build
+
+      - name: Sync Capacitor
+        run: npx cap sync android
+
+      - name: Build debug APK
+        working-directory: android
+        run: ./gradlew assembleDebug --no-daemon
+
+      - name: Upload APK
+        uses: actions/upload-artifact@v4
+        with:
+          name: aisso-debug-apk
+          path: android/app/build/outputs/apk/debug/app-debug.apk
+          if-no-files-found: error
