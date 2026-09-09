@@ -187,14 +187,15 @@ const ActionList = memo(({ actions }: ActionListProps) => {
                   ) : null}
                 </div>
                 {type === 'file' ? (
-                  <div>
-                    Create{' '}
+                  <div className="flex-1 flex items-center gap-1.5 min-w-0">
+                    <span className="shrink-0">Create</span>
                     <code
-                      className="bg-bolt-elements-artifacts-inlineCode-background text-bolt-elements-artifacts-inlineCode-text px-1.5 py-1 rounded-md text-bolt-elements-item-contentAccent hover:underline cursor-pointer"
+                      className="bg-bolt-elements-artifacts-inlineCode-background text-bolt-elements-artifacts-inlineCode-text px-1.5 py-1 rounded-md text-bolt-elements-item-contentAccent hover:underline cursor-pointer truncate"
                       onClick={() => openArtifactInWorkbench(action.filePath)}
                     >
                       {action.filePath}
                     </code>
+                    <ActionTimer status={status} startedAt={action.startedAt} completedAt={action.completedAt} />
                   </div>
                 ) : null}
               </div>
@@ -205,6 +206,38 @@ const ActionList = memo(({ actions }: ActionListProps) => {
     </motion.div>
   );
 });
+
+/**
+ * Compteur de secondes affiche a cote de chaque fichier en cours de
+ * traitement — comme la trace d'outils de Claude Code, pour que le chat
+ * montre en direct que l'IA travaille dessus (et depuis combien de temps),
+ * plutot que de rester silencieux jusqu'a la fin de l'action.
+ */
+const ActionTimer = memo(
+  ({ status, startedAt, completedAt }: { status: ActionState['status']; startedAt: number; completedAt?: number }) => {
+    const [now, setNow] = useState(() => Date.now());
+
+    useEffect(() => {
+      if (completedAt || status === 'pending') {
+        return undefined;
+      }
+
+      const interval = setInterval(() => setNow(Date.now()), 1000);
+
+      return () => clearInterval(interval);
+    }, [completedAt, status]);
+
+    if (status === 'pending') {
+      return null;
+    }
+
+    const elapsedSeconds = Math.max(0, Math.round(((completedAt ?? now) - startedAt) / 1000));
+
+    return (
+      <span className="ml-auto shrink-0 text-xs text-bolt-elements-textTertiary tabular-nums">{elapsedSeconds}s</span>
+    );
+  },
+);
 
 function getIconColor(status: ActionState['status']) {
   switch (status) {

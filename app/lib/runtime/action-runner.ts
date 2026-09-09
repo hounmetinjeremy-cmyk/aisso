@@ -13,6 +13,15 @@ export type BaseActionState = BoltAction & {
   abort: () => void;
   executed: boolean;
   abortSignal: AbortSignal;
+
+  /*
+   * Horodatages affiches dans le chat (voir Artifact.tsx) pour que chaque
+   * action de fichier montre depuis combien de temps l'IA la traite, comme
+   * le fait le trace d'outils de Claude Code — sans ca, un import ou une
+   * ecriture longue ne donnait aucun signe de vie visible dans le chat.
+   */
+  startedAt: number;
+  completedAt?: number;
 };
 
 export type FailedActionState = BoltAction &
@@ -23,7 +32,7 @@ export type FailedActionState = BoltAction &
 
 export type ActionState = BaseActionState | FailedActionState;
 
-type BaseActionUpdate = Partial<Pick<BaseActionState, 'status' | 'abort' | 'executed'>>;
+type BaseActionUpdate = Partial<Pick<BaseActionState, 'status' | 'abort' | 'executed' | 'completedAt'>>;
 
 export type ActionStateUpdate =
   BaseActionUpdate | (Omit<BaseActionUpdate, 'status'> & { status: 'failed'; error: string });
@@ -75,9 +84,10 @@ export class ActionRunner {
       ...data.action,
       status: 'pending',
       executed: false,
+      startedAt: Date.now(),
       abort: () => {
         abortController.abort();
-        this.#updateAction(actionId, { status: 'aborted' });
+        this.#updateAction(actionId, { status: 'aborted', completedAt: Date.now() });
       },
       abortSignal: abortController.signal,
     });
@@ -137,6 +147,7 @@ export class ActionRunner {
             this.#updateAction(actionId, {
               status: 'failed',
               error: error instanceof Error ? error.message : 'Supabase action failed',
+              completedAt: Date.now(),
             });
 
             // Return early without re-throwing
@@ -146,15 +157,18 @@ export class ActionRunner {
         }
       }
 
+      const finalStatus = isStreaming ? 'running' : action.abortSignal.aborted ? 'aborted' : 'complete';
+
       this.#updateAction(actionId, {
-        status: isStreaming ? 'running' : action.abortSignal.aborted ? 'aborted' : 'complete',
+        status: finalStatus,
+        ...(finalStatus === 'running' ? {} : { completedAt: Date.now() }),
       });
     } catch (error) {
       if (action.abortSignal.aborted) {
         return;
       }
 
-      this.#updateAction(actionId, { status: 'failed', error: 'Action failed' });
+      this.#updateAction(actionId, { status: 'failed', error: 'Action failed', completedAt: Date.now() });
       logger.error(`[${action.type}]:Action failed\n\n`, error);
     }
   }
