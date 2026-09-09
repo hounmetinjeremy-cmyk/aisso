@@ -295,15 +295,22 @@ async function chatAction({ context, request }: ActionFunctionArgs) {
           toolChoice: 'auto',
 
           /*
-           * mcpService.tools (avec execute) au lieu de toolsWithoutExecute : ce
-           * dernier force le SDK a marquer chaque appel d'outil MCP en etat
-           * 'call' et a attendre un clic manuel "Run tool" cote client avant
-           * de l'executer (voir ToolInvocations.tsx / processToolInvocations)
-           * — contraire a l'exigence produit que tout se passe en arriere-plan,
-           * sans intervention. Avec execute present, streamText execute les
-           * outils lui-meme au fil de sa boucle multi-etapes (maxSteps).
+           * REVERT (teste en reel) : passer a mcpService.tools (avec execute)
+           * fait planter tout appel d'outil avec les modeles Gemini "thinking"
+           * ("Function call is missing a thought_signature ... required for
+           * tools to work correctly") — ce champ, exige par l'API Gemini pour
+           * rejouer un appel de fonction dans une boucle multi-etapes geree
+           * par le SDK, n'existe pas du tout dans la version installee
+           * d'@ai-sdk/google (0.0.52, bien avant l'introduction de ce champ).
+           * Impossible a corriger par un simple sanitizer : la boucle
+           * multi-etapes interne de streamText perd cette info avant de
+           * rappeler le modele. toolsWithoutExecute contourne le probleme en
+           * forcant chaque outil a se resoudre via une requete /api/chat
+           * entierement neuve (voir processToolInvocations) plutot que via la
+           * continuation interne du SDK — l'approbation est maintenant
+           * automatisee cote client (Chat.client.tsx) pour rester invisible.
            */
-          tools: mcpService.tools,
+          tools: mcpService.toolsWithoutExecute,
           maxSteps: maxLLMSteps,
           onStepFinish: ({ toolCalls }) => {
             // add tool call annotations for frontend processing

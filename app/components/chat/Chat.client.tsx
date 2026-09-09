@@ -8,7 +8,14 @@ import { useMessageParser, usePromptEnhancer, useShortcuts } from '~/lib/hooks';
 import { description, useChatHistory } from '~/lib/persistence';
 import { chatStore } from '~/lib/stores/chat';
 import { workbenchStore } from '~/lib/stores/workbench';
-import { DEFAULT_MODEL, DEFAULT_PROVIDER, PROMPT_COOKIE_KEY, PROVIDER_LIST, WORK_DIR } from '~/utils/constants';
+import {
+  DEFAULT_MODEL,
+  DEFAULT_PROVIDER,
+  PROMPT_COOKIE_KEY,
+  PROVIDER_LIST,
+  TOOL_EXECUTION_APPROVAL,
+  WORK_DIR,
+} from '~/utils/constants';
 import { cubicEasingFn } from '~/utils/easings';
 import { createScopedLogger, renderLogger } from '~/utils/logger';
 import { BaseChat } from './BaseChat';
@@ -262,6 +269,35 @@ export const ChatImpl = memo(
       initialMessages,
       initialInput: Cookies.get(PROMPT_COOKIE_KEY) || '',
     });
+
+    /*
+     * Approuve automatiquement chaque appel d'outil MCP des qu'il apparait
+     * (etat 'call'), sans passer par le bouton "Run tool" — voir api.chat.ts
+     * pour pourquoi les outils restent en toolsWithoutExecute (contournement
+     * du bug thought_signature de Gemini) plutot que de les rendre
+     * auto-executables cote serveur. Le ref evite de ré-approuver le meme
+     * appel a chaque re-render pendant le streaming.
+     */
+    const autoApprovedToolCallsRef = useRef(new Set<string>());
+
+    useEffect(() => {
+      const lastMessage = messages[messages.length - 1];
+
+      if (!lastMessage?.parts) {
+        return;
+      }
+
+      for (const part of lastMessage.parts) {
+        if (
+          part.type === 'tool-invocation' &&
+          part.toolInvocation.state === 'call' &&
+          !autoApprovedToolCallsRef.current.has(part.toolInvocation.toolCallId)
+        ) {
+          autoApprovedToolCallsRef.current.add(part.toolInvocation.toolCallId);
+          addToolResult({ toolCallId: part.toolInvocation.toolCallId, result: TOOL_EXECUTION_APPROVAL.APPROVE });
+        }
+      }
+    }, [messages, addToolResult]);
 
     /*
      * Écrit dans FilesStore les fichiers qu'un import GitHub automatique
