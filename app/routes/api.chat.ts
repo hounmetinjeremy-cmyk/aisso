@@ -293,7 +293,17 @@ async function chatAction({ context, request }: ActionFunctionArgs) {
           supabaseConnection: supabase,
           githubConnection,
           toolChoice: 'auto',
-          tools: mcpService.toolsWithoutExecute,
+
+          /*
+           * mcpService.tools (avec execute) au lieu de toolsWithoutExecute : ce
+           * dernier force le SDK a marquer chaque appel d'outil MCP en etat
+           * 'call' et a attendre un clic manuel "Run tool" cote client avant
+           * de l'executer (voir ToolInvocations.tsx / processToolInvocations)
+           * — contraire a l'exigence produit que tout se passe en arriere-plan,
+           * sans intervention. Avec execute present, streamText execute les
+           * outils lui-meme au fil de sa boucle multi-etapes (maxSteps).
+           */
+          tools: mcpService.tools,
           maxSteps: maxLLMSteps,
           onStepFinish: ({ toolCalls }) => {
             // add tool call annotations for frontend processing
