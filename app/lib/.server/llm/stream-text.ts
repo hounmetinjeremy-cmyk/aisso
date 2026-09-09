@@ -11,6 +11,7 @@ import { createFilesContext, extractPropertiesFromMessage } from './utils';
 import { discussPrompt } from '~/lib/common/prompts/discuss-prompt';
 import type { DesignScheme } from '~/types/design-scheme';
 import { sanitizeToolsForGemini } from './sanitize-tools-for-gemini';
+import { sanitizeToolResultsForGemini } from './sanitize-tool-results-for-gemini';
 
 export type Messages = Message[];
 
@@ -291,6 +292,18 @@ export async function streamText(props: {
     ),
   );
 
+  let coreMessages = convertToCoreMessages(processedMessages as any);
+
+  /*
+   * Meme raison que sanitizeToolsForGemini ci-dessus, mais pour le resultat des
+   * outils plutot que leur schema : Gemini exige un objet dans
+   * function_response.response, jamais une valeur brute (chaine, nombre...).
+   * Voir sanitize-tool-results-for-gemini.ts pour le detail exact du bug.
+   */
+  if (currentProvider === 'Google') {
+    coreMessages = sanitizeToolResultsForGemini(coreMessages);
+  }
+
   const streamParams = {
     model: provider.getModelInstance({
       model: modelDetails.name,
@@ -309,7 +322,7 @@ export async function streamText(props: {
             mcpToolsAvailable,
           ),
     ...tokenParams,
-    messages: convertToCoreMessages(processedMessages as any),
+    messages: coreMessages,
     ...filteredOptions,
 
     // Set temperature to 1 for reasoning models (required by OpenAI API)
