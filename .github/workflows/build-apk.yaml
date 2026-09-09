@@ -28,7 +28,10 @@ jobs:
       - name: Set Node.js version
         uses: actions/setup-node@v4
         with:
-          node-version: '20.18.0'
+          # Capacitor CLI 8.x exige Node >=22 (le reste du build, en Node 20
+          # comme le workflow de deploy Cloudflare, s'en accommodait bien,
+          # mais `npx cap sync` echoue explicitement en dessous de 22).
+          node-version: '22'
           cache: pnpm
 
       - name: Set up JDK
