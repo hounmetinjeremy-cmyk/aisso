@@ -358,6 +358,25 @@ export class WorkbenchStore {
     }
   }
 
+  /**
+   * Import de projet : ecrit plusieurs fichiers en une seule fois (voir
+   * FilesStore#createFiles) au lieu d'appeler createFile() en boucle, qui
+   * declenche un re-render ET une requete Supabase par fichier — bloquant
+   * pour un import de plusieurs centaines de fichiers.
+   */
+  async createFiles(entries: { path: string; content: string }[], changeSource?: string) {
+    try {
+      await this.#filesStore.createFiles(entries, changeSource);
+
+      if (entries.length > 0) {
+        this.setSelectedFile(entries[entries.length - 1].path);
+      }
+    } catch (error) {
+      console.error('Failed to create files:', error);
+      throw error;
+    }
+  }
+
   async createFolder(folderPath: string) {
     try {
       return await this.#filesStore.createFolder(folderPath);

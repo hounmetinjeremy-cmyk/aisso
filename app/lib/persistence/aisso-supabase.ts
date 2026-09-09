@@ -57,3 +57,36 @@ export async function logFileChange(sessionId: string, filePath: string, content
     console.warn('[aisso-history] echec sauvegarde fichier', error);
   }
 }
+
+/**
+ * Version groupee de logFileChange, pour un import de projet (potentiellement
+ * des centaines de fichiers d'un coup). Un insert Supabase par fichier,
+ * declenche en boucle, part en rafale de requetes concurrentes depuis le
+ * navigateur — observe en reel comme un blocage de l'onglet le temps de
+ * l'import. Un seul insert groupe (un seul aller-retour reseau) evite ca.
+ */
+export async function logFilesChangeBulk(
+  sessionId: string,
+  files: { path: string; content: string }[],
+  changeSource: string,
+) {
+  const userId = auth.currentUser?.uid;
+
+  if (!userId || files.length === 0) {
+    return;
+  }
+
+  try {
+    await aissoSupabase.from('file_history').insert(
+      files.map((file) => ({
+        session_id: sessionId,
+        user_id: userId,
+        file_path: file.path,
+        content: file.content,
+        change_source: changeSource,
+      })),
+    );
+  } catch (error) {
+    console.warn('[aisso-history] echec sauvegarde import groupe', error);
+  }
+}

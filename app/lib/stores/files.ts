@@ -16,7 +16,7 @@ import {
   migrateLegacyLocks,
 } from '~/lib/persistence/lockedFiles';
 import { getCurrentChatId } from '~/utils/fileLocks';
-import { logFileChange } from '~/lib/persistence/aisso-supabase';
+import { logFileChange, logFilesChangeBulk } from '~/lib/persistence/aisso-supabase';
 
 const logger = createScopedLogger('FilesStore');
 
@@ -717,6 +717,44 @@ export class FilesStore {
     } catch (error) {
       logger.error('Failed to create file\n\n', error);
       throw error;
+    }
+  }
+
+  /**
+   * Ecrit plusieurs fichiers d'un coup (import de projet). createFile() en
+   * boucle fait une mise a jour nanostores (donc un re-render) ET un insert
+   * Supabase PAR fichier — pour un import de plusieurs centaines de fichiers,
+   * ca part en rafale de re-renders et de requetes reseau concurrentes,
+   * observe en reel comme un blocage complet de l'onglet le temps que
+   * l'import se termine. Ici : une seule mise a jour du store, au plus un
+   * seul insert Supabase groupe.
+   *
+   * `changeSource` omis = ne pas ecrire dans Supabase depuis le navigateur :
+   * a utiliser quand l'appelant sait que le serveur a deja fait cette
+   * ecriture (cle service_role, plus fiable) pour ne pas la dupliquer — voir
+   * /api/deploy/import.
+   */
+  async createFiles(entries: { path: string; content: string }[], changeSource?: string) {
+    if (entries.length === 0) {
+      return;
+    }
+
+    const updates: FileMap = { ...this.files.get() };
+
+    for (const { path: filePath, content } of entries) {
+      const contentToWrite = content.length === 0 ? ' ' : content;
+
+      updates[filePath] = { type: 'file', content: contentToWrite, isBinary: false, isLocked: false };
+      this.#modifiedFiles.set(filePath, contentToWrite);
+    }
+
+    this.files.set(updates);
+    this.#size += entries.length;
+
+    logger.info(`${entries.length} fichier(s) importe(s) en groupe`);
+
+    if (changeSource) {
+      void logFilesChangeBulk(getCurrentChatId(), entries, changeSource);
     }
   }
 

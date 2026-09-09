@@ -26,10 +26,11 @@ export const action: ActionFunction = async ({ request, context }) => {
       return Response.json({ error: 'SUPABASE_SERVICE_ROLE_KEY manquant côté serveur.' }, { status: 500 });
     }
 
-    const body = await request.json<{ owner?: string; repo?: string; branch?: string }>();
+    const body = await request.json<{ owner?: string; repo?: string; branch?: string; chatId?: string }>();
     const owner = body.owner?.trim();
     const repo = body.repo?.trim();
     const branch = body.branch?.trim();
+    const chatId = body.chatId?.trim() || 'default';
 
     if (!owner || !repo || !branch) {
       return Response.json({ error: 'Dépôt cible manquant (owner, repo, branch).' }, { status: 400 });
@@ -50,6 +51,30 @@ export const action: ActionFunction = async ({ request, context }) => {
     }
 
     const result = await importRepoFiles(token, { owner, repo, branch });
+
+    /*
+     * Ecrit directement dans Supabase depuis le serveur (cle service_role,
+     * fiable, un seul aller-retour) plutot que de laisser le navigateur
+     * ecrire fichier par fichier apres coup — c'est ce deuxieme chemin,
+     * cote client, qui plantait/echouait silencieusement sur les imports de
+     * projets avec beaucoup de fichiers.
+     */
+    if (result.files.length > 0) {
+      const { error: insertError } = await supabase.from('file_history').insert(
+        result.files.map((file) => ({
+          session_id: chatId,
+          user_id: userId,
+          file_path: file.path,
+          content: file.content,
+          change_source: 'import',
+        })),
+      );
+
+      if (insertError) {
+        // L'import GitHub a reussi : on le renvoie quand meme, la sauvegarde Supabase n'est qu'une trace.
+        console.warn('[api.deploy.import] echec sauvegarde Supabase groupee', insertError);
+      }
+    }
 
     return Response.json(result);
   } catch (error) {

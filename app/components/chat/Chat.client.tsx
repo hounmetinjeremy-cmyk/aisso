@@ -291,9 +291,10 @@ export const ChatImpl = memo(
           };
 
           (async () => {
-            for (const file of payload.files) {
-              await workbenchStore.createFile(`${WORK_DIR}/${file.path}`, file.content);
-            }
+            await workbenchStore.createFiles(
+              payload.files.map((file) => ({ path: `${WORK_DIR}/${file.path}`, content: file.content })),
+              'import',
+            );
 
             toast.success(
               `${payload.owner}/${payload.repo} importé automatiquement (${payload.files.length} fichier${payload.files.length > 1 ? 's' : ''}).`,

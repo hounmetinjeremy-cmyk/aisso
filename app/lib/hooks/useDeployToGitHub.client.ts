@@ -157,7 +157,7 @@ export function useDeployToGitHub() {
         const res = await fetch('/api/deploy/import', {
           method: 'POST',
           headers: { Authorization: `Bearer ${idToken}`, 'Content-Type': 'application/json' },
-          body: JSON.stringify(target),
+          body: JSON.stringify({ ...target, chatId: chatId.get() }),
         });
 
         let data: { files?: { path: string; content: string }[]; skipped?: number; error?: string };
@@ -172,9 +172,16 @@ export function useDeployToGitHub() {
           throw new Error(data.error || "L'import a échoué.");
         }
 
-        for (const file of data.files) {
-          await workbenchStore.createFile(`${WORK_DIR}/${file.path}`, file.content);
-        }
+        /*
+         * Un seul appel groupe (une seule mise a jour du store, un seul insert
+         * Supabase) plutot que createFile() en boucle — c'etait la boucle qui
+         * plantait/bloquait le navigateur sur un import de projet avec
+         * beaucoup de fichiers. L'ecriture Supabase elle-meme est deja faite
+         * cote serveur par /api/deploy/import (cle service_role, fiable).
+         */
+        await workbenchStore.createFiles(
+          data.files.map((file) => ({ path: `${WORK_DIR}/${file.path}`, content: file.content })),
+        );
 
         saveSelectedRepo(target);
 
