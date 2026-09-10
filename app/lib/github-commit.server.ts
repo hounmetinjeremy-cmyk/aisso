@@ -44,6 +44,9 @@ async function githubJson<T>(url: string, token: string, init?: RequestInit): Pr
 export interface CommitFileInput {
   path: string;
   content: string;
+
+  /** true : `content` est deja du base64 (fichier binaire) — encode en 'base64' plutot que 'utf-8'. */
+  isBinary?: boolean;
 }
 
 export interface CommitResult {
@@ -86,7 +89,7 @@ export async function commitFilesToRepo(
     files.map(async (file) => {
       const blob = await githubJson<{ sha: string }>(`${GITHUB_API}/repos/${owner}/${repo}/git/blobs`, token, {
         method: 'POST',
-        body: JSON.stringify({ content: file.content, encoding: 'utf-8' }),
+        body: JSON.stringify({ content: file.content, encoding: file.isBinary ? 'base64' : 'utf-8' }),
       });
       return { path: file.path, sha: blob.sha };
     }),

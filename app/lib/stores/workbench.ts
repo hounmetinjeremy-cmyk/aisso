@@ -364,7 +364,7 @@ export class WorkbenchStore {
    * declenche un re-render ET une requete Supabase par fichier — bloquant
    * pour un import de plusieurs centaines de fichiers.
    */
-  async createFiles(entries: { path: string; content: string }[], changeSource?: string) {
+  async createFiles(entries: { path: string; content: string; isBinary?: boolean }[], changeSource?: string) {
     try {
       await this.#filesStore.createFiles(entries, changeSource);
 

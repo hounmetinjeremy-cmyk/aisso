@@ -51,21 +51,22 @@ function saveSelectedRepo(repo: SelectedRepo) {
 /**
  * Récupère l'état actuel des fichiers du projet (FilesStore, source de
  * vérité depuis le retrait du WebContainer) sous la forme attendue par
- * /api/deploy/commit : chemins relatifs au dépôt (sans le préfixe WORK_DIR),
- * fichiers texte uniquement.
+ * /api/deploy/commit : chemins relatifs au dépôt (sans le préfixe WORK_DIR).
+ * Fichiers texte ET binaires (voir isBinary, encodés en base64 par
+ * FilesStore comme par l'API GitHub — même format des deux côtés).
  */
-function collectProjectFiles(): { path: string; content: string }[] {
+function collectProjectFiles(): { path: string; content: string; isBinary: boolean }[] {
   const files = workbenchStore.files.get();
   const prefix = `${WORK_DIR}/`;
-  const result: { path: string; content: string }[] = [];
+  const result: { path: string; content: string; isBinary: boolean }[] = [];
 
   for (const [fullPath, dirent] of Object.entries(files)) {
-    if (!dirent || dirent.type !== 'file' || dirent.isBinary) {
+    if (!dirent || dirent.type !== 'file') {
       continue;
     }
 
     const relativePath = fullPath.startsWith(prefix) ? fullPath.slice(prefix.length) : fullPath;
-    result.push({ path: relativePath, content: dirent.content });
+    result.push({ path: relativePath, content: dirent.content, isBinary: !!dirent.isBinary });
   }
 
   return result;
@@ -160,7 +161,11 @@ export function useDeployToGitHub() {
           body: JSON.stringify({ ...target, chatId: chatId.get() }),
         });
 
-        let data: { files?: { path: string; content: string }[]; skipped?: number; error?: string };
+        let data: {
+          files?: { path: string; content: string; isBinary?: boolean }[];
+          skipped?: number;
+          error?: string;
+        };
 
         try {
           data = await res.json();
@@ -180,7 +185,11 @@ export function useDeployToGitHub() {
          * cote serveur par /api/deploy/import (cle service_role, fiable).
          */
         await workbenchStore.createFiles(
-          data.files.map((file) => ({ path: `${WORK_DIR}/${file.path}`, content: file.content })),
+          data.files.map((file) => ({
+            path: `${WORK_DIR}/${file.path}`,
+            content: file.content,
+            isBinary: file.isBinary,
+          })),
         );
 
         saveSelectedRepo(target);

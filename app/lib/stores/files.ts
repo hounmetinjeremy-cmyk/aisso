@@ -734,17 +734,17 @@ export class FilesStore {
    * ecriture (cle service_role, plus fiable) pour ne pas la dupliquer — voir
    * /api/deploy/import.
    */
-  async createFiles(entries: { path: string; content: string }[], changeSource?: string) {
+  async createFiles(entries: { path: string; content: string; isBinary?: boolean }[], changeSource?: string) {
     if (entries.length === 0) {
       return;
     }
 
     const updates: FileMap = { ...this.files.get() };
 
-    for (const { path: filePath, content } of entries) {
+    for (const { path: filePath, content, isBinary } of entries) {
       const contentToWrite = content.length === 0 ? ' ' : content;
 
-      updates[filePath] = { type: 'file', content: contentToWrite, isBinary: false, isLocked: false };
+      updates[filePath] = { type: 'file', content: contentToWrite, isBinary: !!isBinary, isLocked: false };
       this.#modifiedFiles.set(filePath, contentToWrite);
     }
 

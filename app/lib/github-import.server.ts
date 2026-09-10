@@ -7,8 +7,16 @@
  */
 
 const GITHUB_API = 'https://api.github.com';
-const MAX_FILES = 400;
-const MAX_FILE_BYTES = 250_000;
+
+/*
+ * Ces deux limites ne servent qu'a proteger le Worker Cloudflare lui-meme
+ * (limite de sous-requetes concurrentes, memoire, taille de reponse) — ce
+ * n'est pas un choix de contenu ("on ignore les fichiers binaires"). Tous
+ * les fichiers texte ET binaires sont desormais importes (voir isBinary
+ * plus bas) ; seuls les cas vraiment extremes restent exclus.
+ */
+const MAX_FILES = 1000;
+const MAX_FILE_BYTES = 5_000_000;
 
 function githubHeaders(token: string) {
   return {
@@ -21,6 +29,9 @@ function githubHeaders(token: string) {
 export interface ImportedFile {
   path: string;
   content: string;
+
+  /** true : `content` est le base64 tel que renvoye par l'API GitHub (fichier binaire). */
+  isBinary: boolean;
 }
 
 export interface ImportResult {
@@ -106,8 +117,10 @@ export async function importRepoFiles(
         return null;
       }
 
+      const base64Content = blob.content.replace(/\n/g, '');
+
       try {
-        const binary = atob(blob.content.replace(/\n/g, ''));
+        const binary = atob(base64Content);
         const bytes = new Uint8Array(binary.length);
 
         for (let i = 0; i < binary.length; i++) {
@@ -116,19 +129,30 @@ export async function importRepoFiles(
 
         const content = new TextDecoder('utf-8', { fatal: true }).decode(bytes);
 
-        return { path: entry.path, content };
+        return { path: entry.path, content, isBinary: false };
       } catch {
-        // Décodage UTF-8 strict échoué : fichier binaire, ignoré pour cet import.
-        return null;
+        /*
+         * Décodage UTF-8 strict échoué : fichier binaire (image, police,
+         * etc.). On l'importe quand meme — GitHub renvoie deja son contenu
+         * en base64, le meme format que FilesStore utilise pour les
+         * fichiers binaires (voir FilesStore.createFile) — pas besoin de le
+         * decoder/reencoder, juste le marquer comme tel.
+         */
+        return { path: entry.path, content: base64Content, isBinary: true };
       }
     }),
   );
 
-  const textFiles = files.filter((file): file is ImportedFile => file !== null);
+  const importedFiles = files.filter((file): file is ImportedFile => file !== null);
 
+  /*
+   * Ne compte plus que les fichiers ecartes par la taille ou par un echec
+   * reseau/API isole sur leur blob — plus jamais a cause de leur type
+   * (binaire), desormais toujours importe.
+   */
   return {
-    files: textFiles,
-    skipped: skippedBySize + (blobEntries.length - textFiles.length),
+    files: importedFiles,
+    skipped: skippedBySize + (blobEntries.length - importedFiles.length),
     truncated: treeData.truncated,
   };
 }
