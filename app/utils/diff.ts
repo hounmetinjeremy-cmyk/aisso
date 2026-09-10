@@ -75,6 +75,35 @@ export function diffFiles(fileName: string, oldFileContent: string, newFileConte
   return unifiedDiff;
 }
 
+/**
+ * Compte les lignes ajoutees/supprimees entre deux versions d'un fichier —
+ * pour l'affichage compact "+X -Y" dans le chat (voir Artifact.tsx), a la
+ * maniere de la trace d'outils de Claude Code.
+ */
+export function computeLineDiffStats(
+  oldContent: string,
+  newContent: string,
+): { linesAdded: number; linesRemoved: number } {
+  const unifiedDiff = diffFiles('file', oldContent, newContent);
+
+  if (!unifiedDiff) {
+    return { linesAdded: 0, linesRemoved: 0 };
+  }
+
+  let linesAdded = 0;
+  let linesRemoved = 0;
+
+  for (const line of unifiedDiff.split('\n')) {
+    if (line.startsWith('+') && !line.startsWith('+++')) {
+      linesAdded++;
+    } else if (line.startsWith('-') && !line.startsWith('---')) {
+      linesRemoved++;
+    }
+  }
+
+  return { linesAdded, linesRemoved };
+}
+
 const regex = new RegExp(`^${WORK_DIR}\/`);
 
 /**

@@ -9,6 +9,10 @@ export interface BaseAction {
 export interface FileAction extends BaseAction {
   type: 'file';
   filePath: string;
+
+  /** Rempli une fois l'ecriture terminee (voir WorkbenchStore#_runAction) — affiche en "+X -Y" dans le chat. */
+  linesAdded?: number;
+  linesRemoved?: number;
 }
 
 export interface ShellAction extends BaseAction {

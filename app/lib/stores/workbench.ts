@@ -9,7 +9,7 @@ import JSZip from 'jszip';
 import fileSaver from 'file-saver';
 import { path } from '~/utils/path';
 import { WORK_DIR } from '~/utils/constants';
-import { extractRelativePath } from '~/utils/diff';
+import { computeLineDiffStats, extractRelativePath } from '~/utils/diff';
 import { description } from '~/lib/persistence';
 import { createSampler } from '~/utils/sampler';
 import type { ActionAlert, DeployAlert, SupabaseAlert } from '~/types/actions';
@@ -573,6 +573,13 @@ export class WorkbenchStore {
       const fullPath = path.join(WORK_DIR, data.action.filePath);
 
       /*
+       * Capture avant toute ecriture — sert a calculer +X -Y a la fin (voir
+       * plus bas). FilesStore n'est modifie que par saveFile(), plus loin,
+       * donc getFile() ici reflete encore l'etat d'avant cette action.
+       */
+      const oldContent = this.#filesStore.getFile(fullPath)?.content ?? '';
+
+      /*
        * For scoped locks, we would need to implement diff checking here
        * to determine if the AI is modifying existing code or just adding new code
        * This is a more complex feature that would be implemented in a future update
@@ -609,6 +616,16 @@ export class WorkbenchStore {
       }
 
       if (!isStreaming) {
+        /*
+         * Calcule "+X -Y" pour l'affichage compact dans le chat (voir
+         * Artifact.tsx) — attache directement sur data.action, qui est
+         * fusionne tel quel dans l'etat de l'action par runAction()
+         * ci-dessous (this.#updateAction(actionId, { ...action, ...data.action, ... })).
+         */
+        const { linesAdded, linesRemoved } = computeLineDiffStats(oldContent, data.action.content);
+        data.action.linesAdded = linesAdded;
+        data.action.linesRemoved = linesRemoved;
+
         await artifact.runner.runAction(data);
         this.resetAllFileModifications();
         this.#filesTouchedThisTurn.add(data.action.filePath);

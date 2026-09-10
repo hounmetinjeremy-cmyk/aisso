@@ -187,16 +187,21 @@ const ActionList = memo(({ actions }: ActionListProps) => {
                   ) : null}
                 </div>
                 {type === 'file' ? (
-                  <div className="flex-1 flex items-center gap-1.5 min-w-0">
-                    <span className="shrink-0">Create</span>
-                    <code
-                      className="bg-bolt-elements-artifacts-inlineCode-background text-bolt-elements-artifacts-inlineCode-text px-1.5 py-1 rounded-md text-bolt-elements-item-contentAccent hover:underline cursor-pointer truncate"
-                      onClick={() => openArtifactInWorkbench(action.filePath)}
-                    >
+                  <button
+                    type="button"
+                    className="flex-1 flex items-center gap-1.5 min-w-0 text-left rounded-md -mx-1 px-1 py-0.5 hover:bg-bolt-elements-background-depth-2"
+                    onClick={() => openArtifactInWorkbench(action.filePath)}
+                  >
+                    <code className="bg-bolt-elements-artifacts-inlineCode-background text-bolt-elements-artifacts-inlineCode-text px-1.5 py-1 rounded-md text-bolt-elements-item-contentAccent truncate">
                       {action.filePath}
                     </code>
-                    <ActionTimer status={status} startedAt={action.startedAt} completedAt={action.completedAt} />
-                  </div>
+                    {status === 'complete' ? (
+                      <DiffStats linesAdded={action.linesAdded} linesRemoved={action.linesRemoved} />
+                    ) : (
+                      <ActionTimer status={status} startedAt={action.startedAt} completedAt={action.completedAt} />
+                    )}
+                    <div className="i-ph:caret-right-bold text-bolt-elements-textTertiary shrink-0"></div>
+                  </button>
                 ) : null}
               </div>
             </motion.li>
@@ -238,6 +243,24 @@ const ActionTimer = memo(
     );
   },
 );
+
+/**
+ * Statistiques "+X -Y" une fois l'ecriture terminee — meme style compact que
+ * la trace d'outils de Claude Code (nombre de lignes ajoutees/supprimees
+ * plutot qu'un simple "Create").
+ */
+const DiffStats = memo(({ linesAdded, linesRemoved }: { linesAdded?: number; linesRemoved?: number }) => {
+  if (!linesAdded && !linesRemoved) {
+    return null;
+  }
+
+  return (
+    <span className="ml-auto shrink-0 text-xs tabular-nums flex items-center gap-1.5">
+      {!!linesAdded && <span className="text-bolt-elements-icon-success">+{linesAdded}</span>}
+      {!!linesRemoved && <span className="text-bolt-elements-icon-error">-{linesRemoved}</span>}
+    </span>
+  );
+});
 
 function getIconColor(status: ActionState['status']) {
   switch (status) {
