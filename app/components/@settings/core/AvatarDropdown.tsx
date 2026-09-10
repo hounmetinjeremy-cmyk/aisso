@@ -123,6 +123,27 @@ export const AvatarDropdown = ({ onSelectTab }: AvatarDropdownProps) => {
               'group',
             )}
             onClick={() =>
+              window.open(
+                'https://github.com/hounmetinjeremy-cmyk/aisso/releases/download/android-apk-latest/aisso.apk',
+                '_blank',
+              )
+            }
+          >
+            <div className="i-ph:android-logo w-4 h-4 text-gray-400 group-hover:text-purple-500 dark:group-hover:text-purple-400 transition-colors" />
+            Télécharger l'app Android (APK)
+          </DropdownMenu.Item>
+
+          <DropdownMenu.Item
+            className={classNames(
+              'flex items-center gap-2 px-4 py-2.5',
+              'text-sm text-gray-700 dark:text-gray-200',
+              'hover:bg-purple-50 dark:hover:bg-purple-500/10',
+              'hover:text-purple-500 dark:hover:text-purple-400',
+              'cursor-pointer transition-all duration-200',
+              'outline-none',
+              'group',
+            )}
+            onClick={() =>
               window.open('https://github.com/stackblitz-labs/bolt.diy/issues/new?template=bug_report.yml', '_blank')
             }
           >

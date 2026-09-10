@@ -10,6 +10,9 @@ on:
       - main
   workflow_dispatch: {}
 
+permissions:
+  contents: write
+
 jobs:
   build-apk:
     name: Build debug APK
@@ -66,3 +69,25 @@ jobs:
           name: aisso-debug-apk
           path: android/app/build/outputs/apk/debug/app-debug.apk
           if-no-files-found: error
+
+      # Un artifact de workflow demande un compte GitHub connecte et expire
+      # (90 jours par defaut) — inutilisable comme lien de telechargement pour
+      # un utilisateur final. Une Release GitHub sur un tag fixe donne une URL
+      # stable et publique (aucune connexion requise) ; softprops/action-gh-release
+      # met a jour la Release existante a chaque run au lieu d'en creer une nouvelle.
+      - name: Rename APK for release
+        run: cp android/app/build/outputs/apk/debug/app-debug.apk aisso.apk
+
+      - name: Publish APK to GitHub Release
+        if: github.event_name == 'push'
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: android-apk-latest
+          name: Aïsso — Application Android (APK)
+          body: |
+            Build debug le plus recent de l'app Android Aïsso, genere automatiquement a chaque push sur `main` (commit ${{ github.sha }}).
+
+            A installer en autorisant les sources inconnues sur l'appareil Android (ce n'est pas un build signe pour le Play Store).
+          files: aisso.apk
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
