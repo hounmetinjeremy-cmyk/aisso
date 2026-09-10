@@ -15,7 +15,6 @@ import type { DesignScheme } from '~/types/design-scheme';
 import { MCPService, type MCPConfig } from '~/lib/services/mcpService';
 import { StreamRecoveryManager } from '~/lib/.server/llm/stream-recovery';
 import { verifyFirebaseIdToken } from '~/lib/firebase-verify.server';
-import { autoImportGithubRepo } from '~/lib/.server/llm/github-auto-import';
 import { getGithubConnectionStatus } from '~/lib/.server/llm/github-tools';
 
 export async function action(args: ActionFunctionArgs) {
@@ -139,47 +138,17 @@ async function chatAction({ context, request }: ActionFunctionArgs) {
     logger.debug(`Total message length: ${totalMessageContent.split(' ').length}, words`);
 
     /*
-     * Les outils IA GitHub (list_github_repos/import_github_repo, function
-     * calling classique) restaient en secours pour le modèle, mais Gemini
-     * "thinking" (le modèle par défaut de l'app) plante dessus faute de
-     * support de thought_signature dans le SDK installé (voir
-     * github-auto-import.ts) — un modèle qui ne trouve pas de nom de dépôt
-     * précis dans la détection déterministe tentait alors ces outils et
-     * faisait planter tout l'échange. Retirés : seule la détection
-     * déterministe (Worker, jamais le modèle) importe désormais un dépôt.
+     * Import GitHub retiré du chat (déclencheur en langage naturel comme les
+     * outils IA de function calling classique) — à la demande, plus aucun
+     * import ne se déclenche automatiquement depuis une conversation.
+     * L'import reste possible via le bouton "Importer" du panneau GitHub
+     * (voir /api/deploy/import), entièrement manuel.
      */
     let lastChunk: string | undefined = undefined;
 
     const dataStream = createDataStream({
       async execute(dataStream) {
         streamRecovery.startMonitoring();
-
-        if (context.cloudflare?.env) {
-          const recentUserMessagesRaw = [...messages]
-            .reverse()
-            .filter((message) => message.role === 'user' && typeof message.content === 'string')
-            .slice(0, 6);
-
-          const recentUserMessages = recentUserMessagesRaw.map((message) => message.content as string);
-          const { model: currentModel, provider: currentProviderName } = recentUserMessagesRaw[0]
-            ? extractPropertiesFromMessage(recentUserMessagesRaw[0])
-            : { model: undefined, provider: undefined };
-
-          await autoImportGithubRepo({
-            env: context.cloudflare.env as Env,
-            userId: chatUserId,
-            recentUserMessages,
-            apiKeys,
-            providerSettings,
-            currentModel,
-            currentProviderName,
-            files: files || {},
-            dataStream,
-          }).catch((error) => {
-            logger.error('autoImportGithubRepo failed', error);
-            return null;
-          });
-        }
 
         const filePaths = getFilePaths(files || {});
         let filteredFiles: FileMap | undefined = undefined;
