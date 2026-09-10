@@ -62,6 +62,7 @@ async function chatAction({ context, request }: ActionFunctionArgs) {
     maxLLMSteps,
     firebaseIdToken,
     mcpConfig,
+    hasDeployTarget,
   } = await request.json<{
     messages: Messages;
     files: any;
@@ -80,6 +81,7 @@ async function chatAction({ context, request }: ActionFunctionArgs) {
     maxLLMSteps: number;
     firebaseIdToken?: string;
     mcpConfig?: MCPConfig;
+    hasDeployTarget?: boolean;
   }>();
 
   /*
@@ -93,12 +95,15 @@ async function chatAction({ context, request }: ActionFunctionArgs) {
    * Statut de connexion GitHub injecté dans le prompt système (voir prompt-library.ts) pour que le modèle sache
    * s'il est connecté au lieu de deviner ou de prétendre ne pas pouvoir le savoir.
    */
-  const githubConnection = context.cloudflare?.env
-    ? await getGithubConnectionStatus(context.cloudflare.env as Env, chatUserId).catch(() => ({
-        isConnected: false,
-        username: null,
-      }))
-    : { isConnected: false, username: null };
+  const githubConnection = {
+    ...(context.cloudflare?.env
+      ? await getGithubConnectionStatus(context.cloudflare.env as Env, chatUserId).catch(() => ({
+          isConnected: false,
+          username: null,
+        }))
+      : { isConnected: false, username: null }),
+    hasDeployTarget: !!hasDeployTarget,
+  };
 
   const cookieHeader = request.headers.get('Cookie');
   const apiKeys = JSON.parse(parseCookies(cookieHeader || '').apiKeys || '{}');

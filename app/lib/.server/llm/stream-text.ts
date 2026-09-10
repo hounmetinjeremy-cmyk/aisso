@@ -27,6 +27,7 @@ export interface StreamingOptions extends Omit<Parameters<typeof _streamText>[0]
   githubConnection?: {
     isConnected: boolean;
     username: string | null;
+    hasDeployTarget?: boolean;
   };
 }
 
@@ -168,6 +169,7 @@ export async function streamText(props: {
       github: {
         isConnected: options?.githubConnection?.isConnected || false,
         username: options?.githubConnection?.username ?? null,
+        hasDeployTarget: options?.githubConnection?.hasDeployTarget || false,
       },
       mcpToolsAvailable,
     }) ?? getSystemPrompt();

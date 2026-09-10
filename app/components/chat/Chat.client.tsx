@@ -190,6 +190,19 @@ export const ChatImpl = memo(
         const target = loadSelectedRepo();
 
         if (!target) {
+          /*
+           * Testé en réel : le modèle affirme systématiquement (instruction
+           * système) que les fichiers sont "automatiquement poussés sur
+           * GitHub" — vrai seulement si un dépôt cible a déjà été choisi
+           * pour CETTE conversation (bouton Déployer, ou import manuel qui
+           * l'enregistre déjà). Sans ça, ce retour restait totalement
+           * silencieux : aucun push, aucune erreur, l'utilisateur découvrait
+           * un dépôt vide bien plus tard sans aucun indice.
+           */
+          toast.warning(
+            `${touchedFiles.length} fichier${touchedFiles.length > 1 ? 's' : ''} modifié${touchedFiles.length > 1 ? 's' : ''}, mais aucun dépôt GitHub choisi pour cette conversation — utilise le bouton Déployer pour en choisir un avant que les changements soient poussés.`,
+          );
+
           return;
         }
 
@@ -229,6 +242,16 @@ export const ChatImpl = memo(
         contextOptimization: contextOptimizationEnabled,
         chatMode,
         designScheme,
+
+        /*
+         * Un dépôt GitHub connecté (OAuth) ne veut pas dire qu'un dépôt CIBLE
+         * a été choisi pour CETTE conversation — le push automatique de fin
+         * de tour (voir autoPushToGitHub) ne se déclenche que si c'est le
+         * cas. Sans cette info, le prompt système affirmait sans condition
+         * que "les fichiers sont automatiquement poussés", ce qui induisait
+         * l'utilisateur en erreur quand aucun dépôt cible n'était choisi.
+         */
+        hasDeployTarget: !!loadSelectedRepo(),
         supabase: {
           isConnected: supabaseConn.isConnected,
           hasSelectedProject: !!selectedProject,

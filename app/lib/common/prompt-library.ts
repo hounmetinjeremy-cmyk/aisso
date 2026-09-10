@@ -19,6 +19,7 @@ export interface PromptOptions {
   github?: {
     isConnected: boolean;
     username: string | null;
+    hasDeployTarget?: boolean;
   };
   mcpToolsAvailable?: boolean;
 }
