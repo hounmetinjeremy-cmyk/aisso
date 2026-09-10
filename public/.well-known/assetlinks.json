@@ -1,0 +1,10 @@
+[
+  {
+    "relation": ["delegate_permission/common.handle_all_urls"],
+    "target": {
+      "namespace": "android_app",
+      "package_name": "dev.aisso.app",
+      "sha256_cert_fingerprints": ["C3:7B:71:5E:2F:C1:81:63:F7:31:65:5A:BD:87:A6:04:88:7A:1E:AF:E3:01:0B:AE:35:D4:63:01:7A:FC:FD:41"]
+    }
+  }
+]

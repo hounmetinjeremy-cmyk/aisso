@@ -22,6 +22,21 @@
                 <category android:name="android.intent.category.LAUNCHER" />
             </intent-filter>
 
+            <!--
+              App Link : quand la connexion Google redirige (via Chrome, WebView
+              interdite par Google pour l'OAuth) vers ce domaine, Android rouvre
+              l'APK au lieu de laisser l'utilisateur coince dans Chrome.
+              autoVerify="true" declenche la verification via
+              https://aisso.hounmetinjeremy.workers.dev/.well-known/assetlinks.json
+              au moment de l'installation.
+            -->
+            <intent-filter android:autoVerify="true">
+                <action android:name="android.intent.action.VIEW" />
+                <category android:name="android.intent.category.DEFAULT" />
+                <category android:name="android.intent.category.BROWSABLE" />
+                <data android:scheme="https" android:host="aisso.hounmetinjeremy.workers.dev" />
+            </intent-filter>
+
         </activity>
 
         <provider

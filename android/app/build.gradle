@@ -16,7 +16,31 @@ android {
             ignoreAssetsPattern = '!.svn:!.git:!.ds_store:!*.scc:.*:!CVS:!thumbs.db:!picasa.ini:!*~'
         }
     }
+    /*
+     * Le keystore debug par defaut de Gradle (~/.android/debug.keystore) est
+     * regenere a chaque run CI (ephemere, machine neuve a chaque fois) — son
+     * empreinte SHA-256 change donc a chaque build. C'est incompatible avec
+     * Android App Links (voir public/.well-known/assetlinks.json et
+     * AndroidManifest.xml) : Android verifie que le certificat de l'APK
+     * installe correspond a celui declare dans assetlinks.json, donc il
+     * faut un keystore debug stable, commite dans le repo (ce n'est qu'un
+     * keystore de debug, pas la cle de signature Play Store — le risque a
+     * le committer est le meme que pour n'importe quel autre debug.keystore
+     * standard).
+     */
+    signingConfigs {
+        debug {
+            storeFile file('debug.keystore')
+            storePassword 'android'
+            keyAlias 'androiddebugkey'
+            keyPassword 'android'
+        }
+    }
+
     buildTypes {
+        debug {
+            signingConfig signingConfigs.debug
+        }
         release {
             minifyEnabled false
             proguardFiles getDefaultProguardFile('proguard-android.txt'), 'proguard-rules.pro'
