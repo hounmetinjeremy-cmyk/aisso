@@ -23,6 +23,21 @@ const config: CapacitorConfig = {
   android: {
     allowMixedContent: false,
   },
+  plugins: {
+    /*
+     * Connexion Google native (Credential Manager Android) au lieu du
+     * flux web (popup/redirection) — Google bloque volontairement ce
+     * dernier dans une WebView embarquee, ce qui faisait rebondir vers
+     * Chrome sans jamais revenir dans l'app (voir AuthGate.client.tsx).
+     * skipNativeAuth: false laisse le plugin gerer FirebaseAuth
+     * nativement ; AuthGate.client.tsx resynchronise ensuite le SDK web
+     * (deja utilise partout ailleurs dans l'app) via signInWithCredential.
+     */
+    FirebaseAuthentication: {
+      skipNativeAuth: false,
+      providers: ['google.com'],
+    },
+  },
 };
 
 export default config;

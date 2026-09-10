@@ -57,6 +57,7 @@
     "@ai-sdk/openai": "1.1.2",
     "@ai-sdk/react": "^1.2.12",
     "@ai-sdk/ui-utils": "^1.2.11",
+    "@capacitor-firebase/authentication": "7.5.0",
     "@capacitor/android": "^8.5.1",
     "@capacitor/core": "^8.5.1",
     "@codemirror/autocomplete": "^6.18.3",

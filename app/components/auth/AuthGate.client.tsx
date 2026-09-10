@@ -6,9 +6,22 @@ import {
   signInWithPopup,
   signInWithRedirect,
 } from 'firebase/auth';
+import { Capacitor } from '@capacitor/core';
+import { FirebaseAuthentication } from '@capacitor-firebase/authentication';
 
 import { auth } from '~/lib/firebase.client';
 import { useAuth } from '~/lib/hooks/useAuth.client';
+
+/*
+ * Dans l'APK (WebView Capacitor), Google refuse volontairement le flux web
+ * (popup/redirection/GSI) — ça rebondissait vers Chrome sans jamais revenir
+ * dans l'app. Sur natif, on passe donc entierement par le plugin natif
+ * (Credential Manager Android), puis on resynchronise le SDK web (utilise
+ * partout ailleurs dans l'app, voir useAuth.client.ts) avec le credential
+ * obtenu — aucune des heuristiques web ci-dessous (GSI, popup, redirection)
+ * n'est utilisee sur natif.
+ */
+const isNativePlatform = Capacitor.isNativePlatform();
 
 // "ID client Web" généré par Firebase (Authentication > Méthode de connexion > Google).
 const GOOGLE_WEB_CLIENT_ID = '545417768480-mrjg6n07jlh3n2n3ipifa66km7km6iei.apps.googleusercontent.com';
@@ -117,10 +130,18 @@ function LoginScreen({ initialError }: { initialError?: string | null }) {
   const [error, setError] = useState<string | null>(initialError ?? null);
 
   useEffect(() => {
+    if (isNativePlatform) {
+      return;
+    }
+
     getRedirectResult(auth).catch((err) => setError(messageFrom(err)));
   }, []);
 
   useEffect(() => {
+    if (isNativePlatform) {
+      return;
+    }
+
     loadGoogleIdentityServices()
       .then(() => {
         window.google?.accounts.id.initialize({
@@ -138,6 +159,24 @@ function LoginScreen({ initialError }: { initialError?: string | null }) {
         // Google Identity Services indisponible : le bouton retombera sur popup/redirection Firebase.
       });
   }, []);
+
+  const signInWithGoogleNative = async () => {
+    try {
+      const result = await FirebaseAuthentication.signInWithGoogle();
+      const idToken = result.credential?.idToken;
+
+      if (!idToken) {
+        throw new Error('Connexion Google annulée.');
+      }
+
+      const credential = GoogleAuthProvider.credential(idToken);
+      await signInWithCredential(auth, credential);
+    } catch (err) {
+      setError(messageFrom(err));
+    } finally {
+      setBusy(false);
+    }
+  };
 
   const signInWithFirebaseFallback = async () => {
     try {
@@ -178,6 +217,11 @@ function LoginScreen({ initialError }: { initialError?: string | null }) {
   const signInWithGoogle = () => {
     setError(null);
     setBusy(true);
+
+    if (isNativePlatform) {
+      void signInWithGoogleNative();
+      return;
+    }
 
     if (window.google?.accounts?.id) {
       window.google.accounts.id.prompt((notification) => {
