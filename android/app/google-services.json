@@ -1,0 +1,39 @@
+{
+  "project_info": {
+    "project_number": "545417768480",
+    "project_id": "aisso-d9de3",
+    "storage_bucket": "aisso-d9de3.firebasestorage.app"
+  },
+  "client": [
+    {
+      "client_info": {
+        "mobilesdk_app_id": "1:545417768480:android:e8260e0cf12b8221669645",
+        "android_client_info": {
+          "package_name": "dev.aisso.app"
+        }
+      },
+      "oauth_client": [
+        {
+          "client_id": "545417768480-mrjg6n07jlh3n2n3ipifa66km7km6iei.apps.googleusercontent.com",
+          "client_type": 3
+        }
+      ],
+      "api_key": [
+        {
+          "current_key": "AIzaSyC3VS1H2RY1yGmLqf1pUOxbkJQFolpKoh4"
+        }
+      ],
+      "services": {
+        "appinvite_service": {
+          "other_platform_oauth_client": [
+            {
+              "client_id": "545417768480-4l1rmpk3iq7jcsga2bi8jk0o6d1uqq6p.apps.googleusercontent.com",
+              "client_type": 3
+            }
+          ]
+        }
+      }
+    }
+  ],
+  "configuration_version": "1"
+}
