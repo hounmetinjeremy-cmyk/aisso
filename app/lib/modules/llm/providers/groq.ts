@@ -14,30 +14,40 @@ export default class GroqProvider extends BaseProvider {
 
   staticModels: ModelInfo[] = [
     /*
-     * Essential fallback models. Testé en réel : toute la gamme Llama 3.x
-     * précédente (llama-3.1-8b-instant, llama-3.3-70b-versatile) a été
-     * retirée par Groq ("model does not exist or you do not have access
-     * to it"). Remplacée par la génération Llama 4 (Scout/Maverick),
-     * annoncée par Groq comme disponible dès la sortie de Llama 4.
+     * Essential fallback models, utilisés seulement si aucune clé API Groq
+     * n'est configurée (sinon getDynamicModels() ci-dessous récupère la
+     * vraie liste à jour depuis l'API). 2e remplacement en date : la
+     * génération Llama 4 (Scout/Maverick) qui remplaçait déjà Llama 3.x a
+     * été dépréciée à son tour par Groq (Maverick le 20/02/2026, Scout le
+     * 17/06/2026 — plus servi du tout depuis août 2026, voir
+     * https://console.groq.com/docs/deprecations). Remplacés par les modèles
+     * que Groq recommande explicitement en migration : gpt-oss (OpenAI open
+     * weights) et Qwen3.
      *
      * Impossible de vérifier ces noms en direct depuis cet environnement
-     * (accès réseau vers api.groq.com bloqué ici, et cette liste n'est de
-     * toute façon qu'un secours — dès qu'une clé API Groq valide est
-     * configurée, getDynamicModels() ci-dessous récupère la vraie liste à
-     * jour). Si ces deux noms sont eux aussi obsolètes, se fier à la liste
-     * déroulante réelle de l'app (alimentée par getDynamicModels) plutôt
-     * qu'à ce secours codé en dur.
+     * (accès réseau vers api.groq.com bloqué ici). Si ces noms sont eux
+     * aussi obsolètes au moment où quelqu'un lit ceci, se fier à
+     * https://console.groq.com/docs/models ou à la liste déroulante réelle
+     * de l'app (alimentée par getDynamicModels) plutôt qu'à ce secours codé
+     * en dur.
      */
     {
-      name: 'meta-llama/llama-4-scout-17b-16e-instruct',
-      label: 'Llama 4 Scout',
+      name: 'openai/gpt-oss-120b',
+      label: 'GPT-OSS 120B',
       provider: 'Groq',
       maxTokenAllowed: 128000,
       maxCompletionTokens: 8192,
     },
     {
-      name: 'meta-llama/llama-4-maverick-17b-128e-instruct',
-      label: 'Llama 4 Maverick',
+      name: 'openai/gpt-oss-20b',
+      label: 'GPT-OSS 20B',
+      provider: 'Groq',
+      maxTokenAllowed: 128000,
+      maxCompletionTokens: 8192,
+    },
+    {
+      name: 'qwen/qwen3.6-27b',
+      label: 'Qwen3.6 27B',
       provider: 'Groq',
       maxTokenAllowed: 128000,
       maxCompletionTokens: 8192,
