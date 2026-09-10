@@ -60,6 +60,33 @@ export class EditorStore {
     );
   }
 
+  /**
+   * Cree une entree vide pour ce fichier si elle n'existe pas encore.
+   *
+   * setDocuments() ci-dessus est la seule autre facon de peupler `documents`,
+   * mais elle n'est appelee que par un useEffect de Workbench.client.tsx qui
+   * ne tourne que pendant que ce panneau est monte a l'ecran. Un fichier tout
+   * juste cree par l'IA pendant que l'utilisateur ne regarde que le chat (cas
+   * courant) n'a donc encore aucune entree ici — et updateFile()/le code
+   * appelant qui en depend (WorkbenchStore.saveFile) no-opaient alors en
+   * silence, sans jamais ecrire dans FilesStore, malgre une action affichee
+   * "complete" dans le chat (ce statut ne suit que ActionRunner, pas si
+   * l'ecriture a reellement eu lieu).
+   */
+  ensureDocument(filePath: string): boolean {
+    if (this.documents.get()[filePath]) {
+      return false;
+    }
+
+    this.documents.setKey(filePath, {
+      value: '',
+      filePath,
+      isBinary: false,
+    });
+
+    return true;
+  }
+
   setSelectedFile(filePath: string | undefined) {
     this.selectedFile.set(filePath);
   }

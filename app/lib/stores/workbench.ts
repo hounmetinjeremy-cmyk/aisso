@@ -586,9 +586,19 @@ export class WorkbenchStore {
         this.currentView.set('code');
       }
 
-      const doc = this.#editorStore.documents.get()[fullPath];
+      /*
+       * Garantit une entree EditorStore pour ce fichier avant d'ecrire dedans.
+       * setDocuments() (seule autre source d'entrees) ne tourne que pendant
+       * que le panneau Workbench est monte a l'ecran — un fichier tout juste
+       * cree pendant que l'utilisateur ne regarde que le chat n'en avait donc
+       * jamais, et updateFile()/saveFile() no-opaient en silence : rien
+       * n'etait jamais ecrit dans FilesStore malgre une action affichee
+       * "complete" (ce statut ne suit que ActionRunner, pas si l'ecriture a
+       * reellement abouti). Voir EditorStore.ensureDocument().
+       */
+      const isFirstUpdate = this.#editorStore.ensureDocument(fullPath);
 
-      if (!doc) {
+      if (isFirstUpdate) {
         await artifact.runner.runAction(data, isStreaming);
       }
 
