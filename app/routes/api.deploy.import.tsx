@@ -4,11 +4,10 @@ import { getSupabaseAdmin } from '~/lib/supabase-admin.server';
 import { importRepoFiles } from '~/lib/github-import.server';
 
 /**
- * Importe les fichiers texte d'un dépôt GitHub existant dans le projet en
- * cours (sens inverse de /api/deploy/commit) — pour ouvrir/continuer un
- * projet déjà présent sur GitHub depuis Aïsso. Les fichiers binaires et
- * volumineux sont ignorés (ce sont des exceptions raisonnables pour un
- * import de code source, pas des cas à gérer silencieusement en douceur).
+ * Importe les fichiers (texte et binaires) d'un dépôt GitHub existant dans
+ * le projet en cours (sens inverse de /api/deploy/commit) — pour
+ * ouvrir/continuer un projet déjà présent sur GitHub depuis Aïsso. Seuls les
+ * fichiers vraiment trop volumineux restent exclus (voir github-import.server.ts).
  */
 export const action: ActionFunction = async ({ request, context }) => {
   try {
@@ -50,18 +49,17 @@ export const action: ActionFunction = async ({ request, context }) => {
       return Response.json({ error: 'GitHub non connecté.' }, { status: 400 });
     }
 
-    const result = await importRepoFiles(token, { owner, repo, branch });
-
     /*
-     * Ecrit directement dans Supabase depuis le serveur (cle service_role,
-     * fiable, un seul aller-retour) plutot que de laisser le navigateur
-     * ecrire fichier par fichier apres coup — c'est ce deuxieme chemin,
-     * cote client, qui plantait/echouait silencieusement sur les imports de
-     * projets avec beaucoup de fichiers.
+     * Ecrit dans Supabase lot par lot, au fur et a mesure de la recuperation
+     * depuis GitHub (voir importRepoFiles/onBatch) — plutot qu'un seul gros
+     * insert a la fin qui suppose que tout le depot a deja tenu en memoire
+     * jusque-la. Un Worker Cloudflare est plafonne a 128 Mo : sur un gros
+     * depot, tout accumuler avant d'ecrire faisait courir un vrai risque de
+     * depassement memoire en plein import.
      */
-    if (result.files.length > 0) {
+    const result = await importRepoFiles(token, { owner, repo, branch }, async (batch) => {
       const { error: insertError } = await supabase.from('file_history').insert(
-        result.files.map((file) => ({
+        batch.map((file) => ({
           session_id: chatId,
           user_id: userId,
           file_path: file.path,
@@ -71,10 +69,10 @@ export const action: ActionFunction = async ({ request, context }) => {
       );
 
       if (insertError) {
-        // L'import GitHub a reussi : on le renvoie quand meme, la sauvegarde Supabase n'est qu'une trace.
-        console.warn('[api.deploy.import] echec sauvegarde Supabase groupee', insertError);
+        // L'import GitHub continue quand meme : la sauvegarde Supabase n'est qu'une trace, jamais bloquante.
+        console.warn('[api.deploy.import] echec sauvegarde Supabase (lot)', insertError);
       }
-    }
+    });
 
     return Response.json(result);
   } catch (error) {
