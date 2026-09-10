@@ -9,13 +9,22 @@
 const GITHUB_API = 'https://api.github.com';
 
 /*
- * Ces deux limites ne servent qu'a proteger le Worker Cloudflare lui-meme
- * (memoire, taille de reponse) — ce n'est pas un choix de contenu ("on
- * ignore les fichiers binaires"). Tous les fichiers texte ET binaires sont
- * desormais importes (voir isBinary plus bas) ; seuls les cas vraiment
- * extremes restent exclus.
+ * Ces deux limites ne servent qu'a proteger le Worker Cloudflare lui-meme —
+ * ce n'est pas un choix de contenu ("on ignore les fichiers binaires").
+ * Tous les fichiers texte ET binaires sont desormais importes (voir
+ * isBinary plus bas) ; seuls les cas vraiment extremes restent exclus.
+ *
+ * MAX_FILES : testé en réel, un dépôt de 3721 fichiers se faisait rejeter
+ * en bloc par l'ancienne limite de 1000 — sans même essayer, alors que le
+ * traitement par lots (voir BATCH_SIZE plus bas) protège déjà contre le
+ * vrai risque (mémoire). La limite qui reste ici correspond à une vraie
+ * limite de plateforme, pas un chiffre arbitraire : un Worker Cloudflare
+ * sur un plan payant est plafonné a 10 000 sous-requetes par invocation
+ * (une requete HTTP = une sous-requete) ; ce nombre de fichiers, plus une
+ * marge pour les autres appels (arbre Git, connected_accounts, inserts
+ * Supabase par lot), reste tres confortablement en dessous.
  */
-const MAX_FILES = 1000;
+const MAX_FILES = 8000;
 const MAX_FILE_BYTES = 5_000_000;
 
 /*
