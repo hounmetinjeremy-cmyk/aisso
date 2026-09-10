@@ -150,6 +150,31 @@ async function chatAction({ context, request }: ActionFunctionArgs) {
       async execute(dataStream) {
         streamRecovery.startMonitoring();
 
+        /*
+         * Une erreur pendant le stream (token limit, reponse invalide du
+         * modele, etc.) n'etait auparavant que loguee cote serveur : le
+         * client ne recevait plus rien et le badge de progression restait
+         * bloque sur "Generating Response" indefiniment, sans que
+         * l'utilisateur sache qu'un probleme est survenu. On pousse
+         * desormais une annotation de progression en erreur pour que l'UI
+         * (ProgressCompilation) sorte de l'etat "in-progress" et affiche
+         * clairement l'echec.
+         */
+        const reportStreamError = (error: unknown) => {
+          const message = error instanceof Error ? error.message : String(error);
+          logger.error('Streaming error:', message);
+
+          dataStream.writeData({
+            type: 'progress',
+            label: 'response',
+            status: 'error',
+            order: progressCounter++,
+            message: message.toLowerCase().includes('token')
+              ? 'Échec : le contenu envoyé au modèle est trop volumineux (limite de tokens dépassée).'
+              : `Échec de la génération : ${message}`,
+          } satisfies ProgressAnnotation);
+        };
+
         const filePaths = getFilePaths(files || {});
         let filteredFiles: FileMap | undefined = undefined;
         let summary: string | undefined = undefined;
@@ -361,9 +386,7 @@ async function chatAction({ context, request }: ActionFunctionArgs) {
             (async () => {
               for await (const part of result.fullStream) {
                 if (part.type === 'error') {
-                  const error: any = part.error;
-                  logger.error(`${error}`);
-
+                  reportStreamError(part.error);
                   return;
                 }
               }
@@ -402,16 +425,8 @@ async function chatAction({ context, request }: ActionFunctionArgs) {
             streamRecovery.updateActivity();
 
             if (part.type === 'error') {
-              const error: any = part.error;
-              logger.error('Streaming error:', error);
               streamRecovery.stop();
-
-              // Enhanced error handling for common streaming issues
-              if (error.message?.includes('Invalid JSON response')) {
-                logger.error('Invalid JSON response detected - likely malformed API response');
-              } else if (error.message?.includes('token')) {
-                logger.error('Token-related error detected - possible token limit exceeded');
-              }
+              reportStreamError(part.error);
 
               return;
             }

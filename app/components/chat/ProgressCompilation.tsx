@@ -100,11 +100,15 @@ const ProgressItem = ({ progress }: { progress: ProgressAnnotation }) => {
             <div className="i-svg-spinners:90-ring-with-bg"></div>
           ) : progress.status === 'complete' ? (
             <div className="i-ph:check"></div>
+          ) : progress.status === 'error' ? (
+            <div className="i-ph:x text-bolt-elements-icon-error"></div>
           ) : null}
         </div>
         {/* {x.label} */}
       </div>
-      {progress.message}
+      <span className={progress.status === 'error' ? 'text-bolt-elements-icon-error' : undefined}>
+        {progress.message}
+      </span>
     </motion.div>
   );
 };
