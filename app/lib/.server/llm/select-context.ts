@@ -234,7 +234,16 @@ export async function selectContext(props: {
 }
 
 export function getFilePaths(files: FileMap) {
-  let filePaths = Object.keys(files);
+  /*
+   * Un fichier binaire (base64) n'a rien d'utile a offrir au modele en
+   * lecture — le proposer comme option de contexte ne fait qu'inviter le
+   * selecteur a le choisir puis a faire exploser le prompt avec son contenu
+   * (voir createFilesContext).
+   */
+  let filePaths = Object.keys(files).filter((path) => {
+    const dirent = files[path];
+    return dirent?.type === 'file' && !dirent.isBinary;
+  });
   filePaths = filePaths.filter((x) => {
     const relPath = x.replace('/home/project/', '');
     return !ig.ignores(relPath);

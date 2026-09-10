@@ -71,6 +71,17 @@ export function createFilesContext(files: FileMap, useRelativePath?: boolean) {
         return '';
       }
 
+      /*
+       * dirent.content pour un fichier binaire est du base64 brut (voir
+       * FilesStore) — un fichier de quelques centaines de Ko fait exploser le
+       * nombre de tokens du prompt (rien d'exploitable pour le modele en
+       * plus), ce qui a deja fait planter/bloquer des generations avec des
+       * depots contenant des binaires. On ne l'envoie jamais tel quel.
+       */
+      if (dirent.isBinary) {
+        return `<boltAction type="file" filePath="${useRelativePath ? path.replace('/home/project/', '') : path}">[fichier binaire, contenu non affiche]</boltAction>`;
+      }
+
       const codeWithLinesNumbers = dirent.content
         .split('\n')
         // .map((v, i) => `${i + 1}|${v}`)
