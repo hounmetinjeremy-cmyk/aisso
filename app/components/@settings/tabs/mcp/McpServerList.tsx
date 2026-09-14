@@ -1,6 +1,5 @@
 import type { MCPServer } from '~/lib/services/mcpService';
 import McpStatusBadge from '~/components/@settings/tabs/mcp/McpStatusBadge';
-import McpServerListItem from '~/components/@settings/tabs/mcp/McpServerListItem';
 import { classNames } from '~/utils/classNames';
 
 type McpServerListProps = {
@@ -14,13 +13,18 @@ type McpServerListProps = {
   connectingServer?: string | null;
   /** Whether this server already has an Authorization header stored */
   isServerConnected?: (serverName: string) => boolean;
+  /** Remove / disconnect server */
+  onRemoveServer?: (serverName: string) => void;
+  removingServer?: string | null;
 };
 
 function needsOAuth(error?: string): boolean {
   if (!error) {
     return false;
   }
+
   const lower = error.toLowerCase();
+
   return (
     lower.includes('invalid_token') ||
     lower.includes('jeton') ||
@@ -41,6 +45,8 @@ export default function McpServerList({
   onConnectAccount,
   connectingServer,
   isServerConnected,
+  onRemoveServer,
+  removingServer,
 }: McpServerListProps) {
   if (serverEntries.length === 0) {
     return <p className="text-sm text-bolt-elements-textSecondary">Aucun serveur MCP configuré</p>;
@@ -51,109 +57,160 @@ export default function McpServerList({
     : serverEntries;
 
   return (
-    <div className="space-y-2">
+    <div className="space-y-4">
       {filteredEntries.map(([serverName, mcpServer]) => {
         const isAvailable = mcpServer.status === 'available';
         const isExpanded = expandedServer === serverName;
         const serverTools = isAvailable ? Object.entries(mcpServer.tools) : [];
-        const hasUrl =
-          mcpServer.config.type === 'sse' || mcpServer.config.type === 'streamable-http';
+        const hasUrl = mcpServer.config.type === 'sse' || mcpServer.config.type === 'streamable-http';
+        const serverUrl = hasUrl ? (mcpServer.config as any).url as string : null;
         const connected = isServerConnected?.(serverName) ?? false;
+        const initial = (serverName.trim()[0] || 'M').toUpperCase();
+
+        /*
+         * Afficher « Connecter le compte GitHub » dès qu'il y a une URL HTTP
+         * et qu'aucun token n'est encore stocké (ou erreur OAuth).
+         */
         const showConnect =
-          !isAvailable && hasUrl && onConnectAccount && (needsOAuth(mcpServer.error) || !connected);
+          hasUrl &&
+          onConnectAccount &&
+          (!connected || needsOAuth(mcpServer.error) || !isAvailable);
+
+        const toolNames = serverTools.map(([name]) => name);
+        const visibleTools = toolNames.slice(0, 6);
+        const moreCount = Math.max(0, toolNames.length - visibleTools.length);
 
         return (
-          <div key={serverName} className="flex flex-col p-2 rounded-md bg-bolt-elements-background-depth-1">
-            <div className="flex items-center justify-between">
-              <div className="flex items-center gap-2 min-w-0 flex-1">
-                <div
-                  onClick={() => toggleServerExpanded(serverName)}
-                  className="flex items-center gap-1.5 text-bolt-elements-textPrimary cursor-pointer"
-                  aria-expanded={isExpanded}
-                >
-                  <div
-                    className={`i-ph:${isExpanded ? 'caret-down' : 'caret-right'} w-3 h-3 transition-transform duration-150`}
-                  />
-                  <span className="font-medium truncate text-left">{serverName}</span>
-                </div>
-
-                <div className="flex-1 min-w-0 truncate">
-                  {hasUrl ? (
-                    <span className="text-xs text-bolt-elements-textSecondary truncate">
-                      {(mcpServer.config as any).url}
-                    </span>
-                  ) : (
-                    <span className="text-xs text-bolt-elements-textSecondary truncate">
-                      {(mcpServer.config as any).command} {(mcpServer.config as any).args?.join(' ')}
-                    </span>
-                  )}
-                </div>
+          <div
+            key={serverName}
+            className="flex flex-col rounded-2xl border border-bolt-elements-borderColor bg-bolt-elements-background-depth-1 overflow-hidden"
+          >
+            {/* Header type fiche connecteur */}
+            <div className="flex flex-col items-center px-4 pt-6 pb-4 gap-3">
+              <div className="w-16 h-16 rounded-2xl bg-bolt-elements-background-depth-3 flex items-center justify-center text-2xl font-semibold text-bolt-elements-textSecondary">
+                {initial}
               </div>
+              <h3 className="text-lg font-semibold text-bolt-elements-textPrimary">{serverName}</h3>
 
-              <div className="ml-2 flex-shrink-0 flex items-center gap-2">
-                {connected && (
-                  <span className="text-[10px] px-1.5 py-0.5 rounded bg-green-100 dark:bg-green-900/30 text-green-700 dark:text-green-400">
-                    Connecté
-                  </span>
-                )}
+              <div className="flex items-center gap-2">
                 {checkingServers ? (
                   <McpStatusBadge status="checking" />
                 ) : (
                   <McpStatusBadge status={isAvailable ? 'available' : 'unavailable'} />
                 )}
+                {connected && (
+                  <span className="text-[10px] px-1.5 py-0.5 rounded bg-green-100 dark:bg-green-900/30 text-green-700 dark:text-green-400">
+                    Compte GitHub lié
+                  </span>
+                )}
               </div>
-            </div>
 
-            {/* Error message */}
-            {!isAvailable && mcpServer.error && (
-              <div className="mt-1.5 ml-6 text-xs text-red-600 dark:text-red-400">Erreur : {mcpServer.error}</div>
-            )}
-
-            {/* CTA OAuth quand le token manque */}
-            {showConnect && (
-              <div className="mt-2 ml-6">
+              {onRemoveServer && (
                 <button
-                  onClick={() => onConnectAccount(serverName)}
-                  disabled={connectingServer === serverName}
+                  type="button"
+                  onClick={() => onRemoveServer(serverName)}
+                  disabled={removingServer === serverName}
                   className={classNames(
-                    'text-xs px-3 py-1.5 rounded-lg flex items-center gap-1.5',
-                    'bg-bolt-elements-item-backgroundAccent text-bolt-elements-item-contentAccent',
-                    'hover:bg-bolt-elements-item-backgroundActive',
+                    'w-full max-w-xs py-2.5 rounded-full text-sm font-medium',
+                    'bg-black text-white dark:bg-white dark:text-black',
+                    'hover:opacity-90 transition-opacity',
                     'disabled:opacity-50 disabled:cursor-not-allowed',
                   )}
                 >
-                  {connectingServer === serverName ? (
-                    <div className="i-svg-spinners:90-ring-with-bg w-3 h-3 animate-spin" />
-                  ) : (
-                    <div className="i-ph:github-logo w-3 h-3" />
-                  )}
-                  {connectingServer === serverName ? 'Redirection vers GitHub…' : 'Connecter le compte GitHub'}
+                  {removingServer === serverName ? 'Déconnexion…' : 'Déconnecter'}
                 </button>
-                <p className="mt-1 text-[11px] text-bolt-elements-textSecondary">
-                  Ce serveur exige une authentification. Clique pour autoriser ton compte GitHub.
-                </p>
-              </div>
-            )}
+              )}
+            </div>
 
-            {/* Tool list */}
-            {isExpanded && isAvailable && (
-              <div className="mt-2">
-                <div className="text-bolt-elements-textSecondary text-xs font-medium ml-1 mb-1.5">Outils disponibles :</div>
-                {serverTools.length === 0 ? (
-                  <div className="ml-4 text-xs text-bolt-elements-textSecondary">Aucun outil disponible</div>
+            {/* Détails */}
+            <div className="px-4 pb-3 space-y-3">
+              <div>
+                <p className="text-xs font-medium text-bolt-elements-textSecondary mb-1.5">Détails</p>
+                <div className="rounded-xl bg-bolt-elements-background-depth-2 px-3 py-2.5">
+                  <p className="text-[11px] text-bolt-elements-textSecondary mb-0.5">URL du serveur</p>
+                  <p className="text-sm text-bolt-elements-textPrimary break-all">
+                    {serverUrl ||
+                      `${(mcpServer.config as any).command || ''} ${((mcpServer.config as any).args || []).join(' ')}`.trim() ||
+                      '—'}
+                  </p>
+                </div>
+              </div>
+
+              {/* Connecter compte GitHub */}
+              {showConnect && (
+                <div className="rounded-xl border border-bolt-elements-borderColor bg-bolt-elements-background-depth-2 p-3 space-y-2">
+                  <p className="text-xs text-bolt-elements-textSecondary">
+                    Ce serveur MCP nécessite une authentification GitHub pour lister et modifier tes dépôts.
+                  </p>
+                  <button
+                    type="button"
+                    onClick={() => onConnectAccount(serverName)}
+                    disabled={connectingServer === serverName}
+                    className={classNames(
+                      'w-full py-2.5 rounded-full text-sm font-medium flex items-center justify-center gap-2',
+                      'bg-bolt-elements-item-backgroundAccent text-bolt-elements-item-contentAccent',
+                      'hover:bg-bolt-elements-item-backgroundActive',
+                      'disabled:opacity-50 disabled:cursor-not-allowed',
+                    )}
+                  >
+                    {connectingServer === serverName ? (
+                      <div className="i-svg-spinners:90-ring-with-bg w-4 h-4 animate-spin" />
+                    ) : (
+                      <div className="i-ph:github-logo w-4 h-4" />
+                    )}
+                    {connectingServer === serverName
+                      ? 'Redirection vers GitHub…'
+                      : 'Connecter le compte GitHub'}
+                  </button>
+                </div>
+              )}
+
+              {!isAvailable && mcpServer.error && (
+                <p className="text-xs text-red-600 dark:text-red-400">Erreur : {mcpServer.error}</p>
+              )}
+
+              {/* Outils */}
+              <div>
+                <button
+                  type="button"
+                  onClick={() => toggleServerExpanded(serverName)}
+                  className="flex items-center justify-between w-full text-xs font-medium text-bolt-elements-textSecondary mb-1.5"
+                >
+                  <span>Outils {toolNames.length > 0 ? `(${toolNames.length})` : ''}</span>
+                  <div
+                    className={`i-ph:${isExpanded ? 'caret-up' : 'caret-down'} w-3.5 h-3.5`}
+                  />
+                </button>
+
+                {toolNames.length === 0 ? (
+                  <p className="text-xs text-bolt-elements-textSecondary px-1">
+                    {isAvailable
+                      ? 'Aucun outil disponible'
+                      : 'Connecte ton compte GitHub puis vérifie la disponibilité pour charger les outils.'}
+                  </p>
                 ) : (
-                  <div className="mt-1 space-y-2">
-                    {serverTools.map(([toolName, toolSchema]) => (
-                      <McpServerListItem
-                        key={`${serverName}-${toolName}`}
-                        toolName={toolName}
-                        toolSchema={toolSchema}
-                      />
+                  <div className="flex flex-wrap gap-1.5">
+                    {(isExpanded ? toolNames : visibleTools).map((name) => (
+                      <span
+                        key={name}
+                        className="text-xs px-2.5 py-1 rounded-full bg-bolt-elements-background-depth-3 text-bolt-elements-textPrimary border border-bolt-elements-borderColor"
+                      >
+                        {name}
+                      </span>
                     ))}
+                    {!isExpanded && moreCount > 0 && (
+                      <button
+                        type="button"
+                        onClick={() => toggleServerExpanded(serverName)}
+                        className="text-xs px-2.5 py-1 rounded-full text-bolt-elements-textSecondary hover:text-bolt-elements-textPrimary"
+                      >
+                        Tout voir
+                      </button>
+                    )}
                   </div>
                 )}
               </div>
-            )}
+            </div>
           </div>
         );
       })}
