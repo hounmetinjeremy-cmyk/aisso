@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { useSearchParams, Link, useNavigate } from '@remix-run/react';
 import { loadPendingOAuth, clearPendingOAuth, exchangeCodeForTokens, saveTokenMeta } from '~/lib/services/mcpOAuth';
 import { useMCPStore } from '~/lib/stores/mcp';
@@ -14,6 +14,16 @@ export default function McpOauthCallback() {
   const initialize = useMCPStore((s) => s.initialize);
   const isInitialized = useMCPStore((s) => s.isInitialized);
 
+  /*
+   * Le code d'autorisation OAuth est à usage unique. `updateSettings()`
+   * plus bas change `settings` dans le store MCP, qui est une dépendance de
+   * cet effet — sans garde, ça re-déclenche l'effet et renvoie le MÊME code
+   * au serveur avant que clearPendingOAuth() ait pu s'exécuter, qui répond
+   * alors "invalid_grant : code déjà utilisé". Cette ref garantit une seule
+   * exécution par montage, quel que soit le nombre de fois où l'effet tourne.
+   */
+  const hasStartedRef = useRef(false);
+
   useEffect(() => {
     if (!isInitialized) {
       void initialize();
@@ -21,9 +31,11 @@ export default function McpOauthCallback() {
   }, [isInitialized, initialize]);
 
   useEffect(() => {
-    if (!isInitialized) {
+    if (!isInitialized || hasStartedRef.current) {
       return;
     }
+
+    hasStartedRef.current = true;
 
     const run = async () => {
       const code = searchParams.get('code');
