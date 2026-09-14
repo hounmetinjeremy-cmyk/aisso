@@ -8,6 +8,9 @@ import { importRepoFiles } from '~/lib/github-import.server';
  * le projet en cours (sens inverse de /api/deploy/commit) — pour
  * ouvrir/continuer un projet déjà présent sur GitHub depuis Aïsso. Seuls les
  * fichiers vraiment trop volumineux restent exclus (voir github-import.server.ts).
+ *
+ * Traitement par lots de 5 fichiers (chunking) avec progression pour éviter
+ * saturation mémoire navigateur / Worker sur les gros dépôts (150-200+ fichiers).
  */
 export const action: ActionFunction = async ({ request, context }) => {
   try {
@@ -50,14 +53,16 @@ export const action: ActionFunction = async ({ request, context }) => {
     }
 
     /*
-     * Ecrit dans Supabase lot par lot, au fur et a mesure de la recuperation
+     * Ecrit dans Supabase lot par lot (5 fichiers max), au fur et a mesure de la recuperation
      * depuis GitHub (voir importRepoFiles/onBatch) — plutot qu'un seul gros
      * insert a la fin qui suppose que tout le depot a deja tenu en memoire
      * jusque-la. Un Worker Cloudflare est plafonne a 128 Mo : sur un gros
      * depot, tout accumuler avant d'ecrire faisait courir un vrai risque de
      * depassement memoire en plein import.
+     *
+     * Progression disponible via le 2e argument de onBatch pour affichage client.
      */
-    const result = await importRepoFiles(token, { owner, repo, branch }, async (batch) => {
+    const result = await importRepoFiles(token, { owner, repo, branch }, async (batch, progress) => {
       const { error: insertError } = await supabase.from('file_history').insert(
         batch.map((file) => ({
           session_id: chatId,
@@ -70,7 +75,9 @@ export const action: ActionFunction = async ({ request, context }) => {
 
       if (insertError) {
         // L'import GitHub continue quand meme : la sauvegarde Supabase n'est qu'une trace, jamais bloquante.
-        console.warn('[api.deploy.import] echec sauvegarde Supabase (lot)', insertError);
+        console.warn(`[api.deploy.import] echec sauvegarde Supabase (lot ${progress.current}/${progress.total})`, insertError);
+      } else {
+        console.log(`[api.deploy.import] Progression : ${progress.current} / ${progress.total} fichiers importés`);
       }
     });
 
