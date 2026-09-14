@@ -21,7 +21,6 @@ export default function McpTab() {
   const [expandedServer, setExpandedServer] = useState<string | null>(null);
   const [connectingServer, setConnectingServer] = useState<string | null>(null);
 
-  // Simple form state
   const [newServerName, setNewServerName] = useState('');
   const [newServerUrl, setNewServerUrl] = useState('');
   const [isAdding, setIsAdding] = useState(false);
@@ -41,11 +40,6 @@ export default function McpTab() {
   }, [settings]);
 
   const serverEntries = useMemo(() => Object.entries(serverTools), [serverTools]);
-
-  const configuredServers = useMemo(
-    () => Object.entries(settings.mcpConfig.mcpServers || {}),
-    [settings.mcpConfig.mcpServers],
-  );
 
   const handleAddServer = async () => {
     const name = newServerName.trim();
@@ -135,7 +129,7 @@ export default function McpTab() {
     const config = settings.mcpConfig.mcpServers[serverName] as any;
 
     if (!config?.url) {
-      toast.error('Ce serveur n\'a pas d\'URL (stdio non supporté pour OAuth)');
+      toast.error("Ce serveur n'a pas d'URL (stdio non supporté pour OAuth)");
       return;
     }
 
@@ -144,7 +138,6 @@ export default function McpTab() {
 
     try {
       await startMcpOAuthFlow(serverName, config.url);
-      // Redirect happens inside startMcpOAuthFlow
     } catch (e) {
       const msg = e instanceof Error ? e.message : 'Impossible de démarrer OAuth';
       setError(msg);
@@ -200,7 +193,6 @@ export default function McpTab() {
 
   return (
     <div className="max-w-2xl mx-auto space-y-6">
-      {/* Formulaire simple d'ajout de connecteur */}
       <section aria-labelledby="add-connector-heading">
         <h2 id="add-connector-heading" className="text-base font-medium text-bolt-elements-textPrimary mb-3">
           Ajouter un connecteur MCP
@@ -259,7 +251,6 @@ export default function McpTab() {
         </div>
       </section>
 
-      {/* Liste des serveurs déjà configurés */}
       <section aria-labelledby="server-status-heading">
         <div className="flex justify-between items-center mb-3">
           <h2 id="server-status-heading" className="text-base font-medium text-bolt-elements-textPrimary">
@@ -291,63 +282,27 @@ export default function McpTab() {
           expandedServer={expandedServer}
           serverEntries={serverEntries}
           toggleServerExpanded={toggleServerExpanded}
+          onConnectAccount={handleConnectAccount}
+          connectingServer={connectingServer}
+          isServerConnected={isServerConnected}
         />
 
-        {/* Actions par serveur : Connecter compte + Supprimer */}
-        {configuredServers.length > 0 && (
-          <div className="mt-3 space-y-2">
-            {configuredServers.map(([name, cfg]) => {
-              const hasUrl = Boolean((cfg as any)?.url);
-              const connected = isServerConnected(name);
-
-              return (
-                <div
-                  key={`actions-${name}`}
-                  className="flex flex-wrap items-center gap-2 p-2 rounded-lg bg-bolt-elements-background-depth-1 border border-bolt-elements-borderColor"
-                >
-                  <span className="text-sm font-medium text-bolt-elements-textPrimary flex-1 min-w-0 truncate">
-                    {name}
-                  </span>
-
-                  {connected ? (
-                    <span className="text-xs px-2 py-1 rounded bg-green-100 dark:bg-green-900/30 text-green-700 dark:text-green-400">
-                      Compte connecté
-                    </span>
-                  ) : hasUrl ? (
-                    <button
-                      onClick={() => handleConnectAccount(name)}
-                      disabled={connectingServer === name}
-                      className={classNames(
-                        'text-xs px-3 py-1.5 rounded-lg flex items-center gap-1.5',
-                        'bg-bolt-elements-item-backgroundAccent text-bolt-elements-item-contentAccent',
-                        'hover:bg-bolt-elements-item-backgroundActive',
-                        'disabled:opacity-50 disabled:cursor-not-allowed',
-                      )}
-                    >
-                      {connectingServer === name ? (
-                        <div className="i-svg-spinners:90-ring-with-bg w-3 h-3 animate-spin" />
-                      ) : (
-                        <div className="i-ph:github-logo w-3 h-3" />
-                      )}
-                      {connectingServer === name ? 'Redirection…' : 'Connecter le compte'}
-                    </button>
-                  ) : null}
-
-                  <button
-                    onClick={() => handleRemoveServer(name)}
-                    disabled={isSaving}
-                    className="text-xs px-2 py-1 rounded border border-red-300 dark:border-red-800 text-red-600 dark:text-red-400 hover:bg-red-50 dark:hover:bg-red-900/20 disabled:opacity-50"
-                  >
-                    Supprimer
-                  </button>
-                </div>
-              );
-            })}
+        {serverEntries.length > 0 && (
+          <div className="mt-3 flex flex-wrap gap-2">
+            {serverEntries.map(([name]) => (
+              <button
+                key={`remove-${name}`}
+                onClick={() => handleRemoveServer(name)}
+                disabled={isSaving}
+                className="text-xs px-2 py-1 rounded border border-red-300 dark:border-red-800 text-red-600 dark:text-red-400 hover:bg-red-50 dark:hover:bg-red-900/20 disabled:opacity-50"
+              >
+                Supprimer « {name} »
+              </button>
+            ))}
           </div>
         )}
       </section>
 
-      {/* Paramètres avancés (max steps) */}
       <section aria-labelledby="advanced-heading">
         <h2 id="advanced-heading" className="text-base font-medium text-bolt-elements-textPrimary mb-3">
           Paramètres
