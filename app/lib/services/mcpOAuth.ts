@@ -9,6 +9,7 @@
  */
 
 const MCP_OAUTH_STATE_KEY = 'mcp_oauth_pending';
+const FETCH_TIMEOUT_MS = 8000;
 
 export type McpOAuthPending = {
   serverName: string;
@@ -29,6 +30,16 @@ function base64UrlEncode(buffer: ArrayBuffer | Uint8Array): string {
     binary += String.fromCharCode(bytes[i]!);
   }
   return btoa(binary).replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/, '');
+}
+
+async function fetchWithTimeout(url: string, init?: RequestInit, timeoutMs = FETCH_TIMEOUT_MS): Promise<Response> {
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), timeoutMs);
+  try {
+    return await fetch(url, { ...init, signal: controller.signal });
+  } finally {
+    clearTimeout(timer);
+  }
 }
 
 export async function generatePkce(): Promise<{ codeVerifier: string; codeChallenge: string }> {
@@ -52,7 +63,6 @@ export function generateState(): string {
 export function getServerOrigin(serverUrl: string): string {
   try {
     const u = new URL(serverUrl);
-    // Keep origin + path without trailing transport segment
     let path = u.pathname.replace(/\/+$/, '');
     path = path.replace(/\/(sse|mcp)$/i, '');
     return `${u.origin}${path}` || u.origin;
@@ -100,6 +110,7 @@ export function clearPendingOAuth(): void {
 /**
  * Discover OAuth endpoints for a remote MCP server.
  * Tries well-known metadata, then falls back to Cloudflare-style paths.
+ * Never blocks more than a few seconds — always returns a usable result.
  */
 export async function discoverOAuthEndpoints(serverUrl: string): Promise<{
   authorizationEndpoint: string;
@@ -110,14 +121,14 @@ export async function discoverOAuthEndpoints(serverUrl: string): Promise<{
 
   // 1) Protected resource metadata (RFC 9728)
   try {
-    const prmRes = await fetch(`${origin}/.well-known/oauth-protected-resource`, {
+    const prmRes = await fetchWithTimeout(`${origin}/.well-known/oauth-protected-resource`, {
       headers: { Accept: 'application/json' },
     });
     if (prmRes.ok) {
       const prm = (await prmRes.json()) as { authorization_servers?: string[] };
       const asUrl = prm.authorization_servers?.[0];
       if (asUrl) {
-        const asMetaRes = await fetch(
+        const asMetaRes = await fetchWithTimeout(
           `${asUrl.replace(/\/+$/, '')}/.well-known/oauth-authorization-server`,
           { headers: { Accept: 'application/json' } },
         );
@@ -143,7 +154,7 @@ export async function discoverOAuthEndpoints(serverUrl: string): Promise<{
 
   // 2) Authorization server metadata on the same origin
   try {
-    const asRes = await fetch(`${origin}/.well-known/oauth-authorization-server`, {
+    const asRes = await fetchWithTimeout(`${origin}/.well-known/oauth-authorization-server`, {
       headers: { Accept: 'application/json' },
     });
     if (asRes.ok) {
@@ -164,7 +175,7 @@ export async function discoverOAuthEndpoints(serverUrl: string): Promise<{
     // ignore
   }
 
-  // 3) Cloudflare workers-oauth-provider style defaults
+  // 3) Cloudflare workers-oauth-provider style defaults (always works)
   return {
     authorizationEndpoint: `${origin}/authorize`,
     tokenEndpoint: `${origin}/token`,
@@ -179,7 +190,7 @@ export async function registerClient(
   registrationEndpoint: string,
   redirectUri: string,
 ): Promise<{ clientId: string; clientSecret?: string }> {
-  const res = await fetch(registrationEndpoint, {
+  const res = await fetchWithTimeout(registrationEndpoint, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json', Accept: 'application/json' },
     body: JSON.stringify({
@@ -202,18 +213,40 @@ export async function registerClient(
 
 /**
  * Start the OAuth authorization flow in the browser.
- * Saves pending state to localStorage and redirects the window.
+ * Saves pending state to localStorage and ALWAYS redirects the window.
+ * Discovery / DCR failures must not block the redirect to /authorize.
  */
 export async function startMcpOAuthFlow(serverName: string, serverUrl: string): Promise<void> {
+  if (typeof window === 'undefined') {
+    throw new Error('OAuth uniquement disponible dans le navigateur');
+  }
+
   const redirectUri = getRedirectUri();
   const { codeVerifier, codeChallenge } = await generatePkce();
   const state = generateState();
 
-  const endpoints = await discoverOAuthEndpoints(serverUrl);
+  let endpoints: {
+    authorizationEndpoint: string;
+    tokenEndpoint: string;
+    registrationEndpoint?: string;
+  };
+
+  try {
+    endpoints = await discoverOAuthEndpoints(serverUrl);
+  } catch (e) {
+    console.warn('[mcp-oauth] discovery failed, using /authorize fallback', e);
+    const origin = getServerOrigin(serverUrl);
+    endpoints = {
+      authorizationEndpoint: `${origin}/authorize`,
+      tokenEndpoint: `${origin}/token`,
+      registrationEndpoint: `${origin}/register`,
+    };
+  }
 
   let clientId = 'aisso';
   let clientSecret: string | undefined;
 
+  // DCR is optional — never block redirect more than timeout
   if (endpoints.registrationEndpoint) {
     try {
       const reg = await registerClient(endpoints.registrationEndpoint, redirectUri);
@@ -243,10 +276,13 @@ export async function startMcpOAuthFlow(serverName: string, serverUrl: string): 
   authUrl.searchParams.set('state', state);
   authUrl.searchParams.set('code_challenge', codeChallenge);
   authUrl.searchParams.set('code_challenge_method', 'S256');
-  // Helpful scope for GitHub-backed servers
   authUrl.searchParams.set('scope', 'openid profile email');
 
-  window.location.href = authUrl.toString();
+  const target = authUrl.toString();
+  console.info('[mcp-oauth] redirecting to authorize:', target);
+
+  // Force navigation — this is the critical step the user expects
+  window.location.assign(target);
 }
 
 /**
@@ -272,7 +308,7 @@ export async function exchangeCodeForTokens(
     body.set('client_secret', pending.clientSecret);
   }
 
-  const res = await fetch(pending.tokenEndpoint, {
+  const res = await fetchWithTimeout(pending.tokenEndpoint, {
     method: 'POST',
     headers: {
       'Content-Type': 'application/x-www-form-urlencoded',
