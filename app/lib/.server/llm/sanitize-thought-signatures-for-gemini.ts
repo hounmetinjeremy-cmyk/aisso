@@ -1,4 +1,4 @@
-import type { CoreMessage } from 'ai';
+import type { CoreMessage, LanguageModelV1Middleware, LanguageModelV1Prompt } from 'ai';
 
 /**
  * Sentinel officiel Google : permet de rejouer un functionCall sans la vraie
@@ -76,4 +76,63 @@ export function sanitizeThoughtSignaturesForGemini(messages: CoreMessage[]): Cor
 
     return { ...message, content } as CoreMessage;
   });
+}
+
+/**
+ * Même correctif que `sanitizeThoughtSignaturesForGemini`, mais posé comme
+ * middleware `transformParams` (voir stream-text.ts) plutôt qu'appliqué une
+ * fois sur les messages initiaux.
+ *
+ * Pourquoi : `maxSteps` fait boucler `streamText` en interne — le tool-call
+ * généré PAR le modèle à l'étape 1 (jamais passé par notre sanitizer, qui ne
+ * tourne qu'une fois avant le premier appel) est rejoué tel quel à l'étape 2
+ * par le SDK, sans signature (le provider `@ai-sdk/google` de cette version
+ * n'en attache jamais). `transformParams` s'exécute avant CHAQUE appel au
+ * modèle wrappé — donc à chaque étape de la boucle — sur le prompt déjà
+ * converti au format bas niveau du provider (`LanguageModelV1Prompt`), ce
+ * qui est le seul point d'interception disponible pour patcher aussi les
+ * tool-calls générés en cours de boucle, pas seulement l'historique client.
+ */
+function injectSignatureV1(part: any): any {
+  if (hasThoughtSignature(part)) {
+    return part;
+  }
+
+  return {
+    ...part,
+    providerMetadata: {
+      ...part.providerMetadata,
+      google: {
+        ...(part.providerMetadata?.google || {}),
+        thoughtSignature: SKIP_SENTINEL,
+      },
+    },
+  };
+}
+
+function sanitizePromptForGemini(prompt: LanguageModelV1Prompt): LanguageModelV1Prompt {
+  return prompt.map((message) => {
+    if (message.role !== 'assistant' || !Array.isArray(message.content)) {
+      return message;
+    }
+
+    const content = (message.content as any[]).map((part) => {
+      if (part?.type === 'tool-call') {
+        return injectSignatureV1(part);
+      }
+
+      return part;
+    });
+
+    return { ...message, content } as typeof message;
+  });
+}
+
+export function createGeminiThoughtSignatureMiddleware(): LanguageModelV1Middleware {
+  return {
+    transformParams: async ({ params }) => ({
+      ...params,
+      prompt: sanitizePromptForGemini(params.prompt),
+    }),
+  };
 }

@@ -1,4 +1,4 @@
-import { convertToCoreMessages, streamText as _streamText, type Message } from 'ai';
+import { convertToCoreMessages, streamText as _streamText, wrapLanguageModel, type Message } from 'ai';
 import { MAX_TOKENS, PROVIDER_COMPLETION_LIMITS, isReasoningModel, type FileMap } from './constants';
 import { getSystemPrompt } from '~/lib/common/prompts/prompts';
 import { DEFAULT_MODEL, DEFAULT_PROVIDER, MODIFICATIONS_TAG_NAME, PROVIDER_LIST, WORK_DIR } from '~/utils/constants';
@@ -12,7 +12,10 @@ import { discussPrompt } from '~/lib/common/prompts/discuss-prompt';
 import type { DesignScheme } from '~/types/design-scheme';
 import { sanitizeToolsForGemini } from './sanitize-tools-for-gemini';
 import { sanitizeToolResultsForGemini } from './sanitize-tool-results-for-gemini';
-import { sanitizeThoughtSignaturesForGemini } from './sanitize-thought-signatures-for-gemini';
+import {
+  sanitizeThoughtSignaturesForGemini,
+  createGeminiThoughtSignatureMiddleware,
+} from './sanitize-thought-signatures-for-gemini';
 
 export type Messages = Message[];
 
@@ -314,13 +317,27 @@ export async function streamText(props: {
     coreMessages = sanitizeThoughtSignaturesForGemini(coreMessages);
   }
 
+  const baseModel = provider.getModelInstance({
+    model: modelDetails.name,
+    serverEnv,
+    apiKeys,
+    providerSettings,
+  });
+
+  /*
+   * `sanitizeThoughtSignaturesForGemini` ci-dessus ne patch que l'historique
+   * initial envoyé par le client. Mais `maxSteps` fait boucler `streamText`
+   * en interne (tool-call -> exécution -> nouvel appel modèle) : les
+   * tool-calls générés PAR le modèle pendant cette boucle ne repassent
+   * jamais par ce sanitizer et sont rejoués sans signature à l'étape
+   * suivante -> 400 Gemini. Ce middleware s'exécute avant CHAQUE appel au
+   * modèle (donc à chaque étape de la boucle), pas juste le premier.
+   */
   const streamParams = {
-    model: provider.getModelInstance({
-      model: modelDetails.name,
-      serverEnv,
-      apiKeys,
-      providerSettings,
-    }),
+    model:
+      currentProvider === 'Google'
+        ? wrapLanguageModel({ model: baseModel, middleware: createGeminiThoughtSignatureMiddleware() })
+        : baseModel,
     system:
       chatMode === 'build'
         ? systemPrompt
