@@ -6,28 +6,20 @@ import { MODEL_REGEX, PROVIDER_REGEX } from '~/utils/constants';
 import { Markdown } from './Markdown';
 import { useStore } from '@nanostores/react';
 import { profileStore } from '~/lib/stores/profile';
-import type {
-  TextUIPart,
-  ReasoningUIPart,
-  ToolInvocationUIPart,
-  SourceUIPart,
-  FileUIPart,
-  StepStartUIPart,
-} from '@ai-sdk/ui-utils';
+import type { FileUIPart, UIMessage } from 'ai';
 
 interface UserMessageProps {
   content: string | Array<{ type: string; text?: string; image?: string }>;
-  parts:
-    (TextUIPart | ReasoningUIPart | ToolInvocationUIPart | SourceUIPart | FileUIPart | StepStartUIPart)[] | undefined;
+  parts: UIMessage['parts'] | undefined;
 }
 
 export function UserMessage({ content, parts }: UserMessageProps) {
   const profile = useStore(profileStore);
 
-  // Extract images from parts - look for file parts with image mime types
+  // Extract images from parts - look for file parts with image media types
   const images =
     parts?.filter(
-      (part): part is FileUIPart => part.type === 'file' && 'mimeType' in part && part.mimeType.startsWith('image/'),
+      (part): part is FileUIPart => part.type === 'file' && 'mediaType' in part && part.mediaType.startsWith('image/'),
     ) || [];
 
   if (Array.isArray(content)) {
@@ -59,7 +51,7 @@ export function UserMessage({ content, parts }: UserMessageProps) {
           {images.map((item, index) => (
             <img
               key={index}
-              src={`data:${item.mimeType};base64,${item.data}`}
+              src={item.url}
               alt={`Image ${index + 1}`}
               className="max-w-full h-auto rounded-lg"
               style={{ maxHeight: '512px', objectFit: 'contain' }}
@@ -80,7 +72,7 @@ export function UserMessage({ content, parts }: UserMessageProps) {
             <div className="h-16 w-16 bg-transparent outline-none">
               <img
                 key={index}
-                src={`data:${item.mimeType};base64,${item.data}`}
+                src={item.url}
                 alt={`Image ${index + 1}`}
                 className="h-full w-full rounded-lg"
                 style={{ objectFit: 'fill' }}

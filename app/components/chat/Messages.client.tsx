@@ -1,4 +1,4 @@
-import type { Message } from 'ai';
+import type { UIMessage } from 'ai';
 import { Fragment } from 'react';
 import { classNames } from '~/utils/classNames';
 import { AssistantMessage } from './AssistantMessage';
@@ -10,18 +10,18 @@ import { toast } from 'react-toastify';
 import { forwardRef } from 'react';
 import type { ForwardedRef } from 'react';
 import type { ProviderInfo } from '~/types/model';
+import type { AppendMessage } from './appendMessage';
 
 interface MessagesProps {
   id?: string;
   className?: string;
   isStreaming?: boolean;
-  messages?: Message[];
-  append?: (message: Message) => void;
+  messages?: UIMessage[];
+  append?: (message: AppendMessage) => void;
   chatMode?: 'discuss' | 'build';
   setChatMode?: (mode: 'discuss' | 'build') => void;
   model?: string;
   provider?: ProviderInfo;
-  addToolResult: ({ toolCallId, result }: { toolCallId: string; result: any }) => void;
 }
 
 export const Messages = forwardRef<HTMLDivElement, MessagesProps>(
@@ -53,14 +53,19 @@ export const Messages = forwardRef<HTMLDivElement, MessagesProps>(
       <div id={id} className={props.className} ref={ref}>
         {messages.length > 0
           ? messages.map((message, index) => {
-              const { role, content, id: messageId, annotations, parts } = message;
+              const { role, id: messageId, parts } = message;
               const isUserMessage = role === 'user';
               const isFirst = index === 0;
-              const isHidden = annotations?.includes('hidden');
+              const isHidden = (message.metadata as { hidden?: boolean } | undefined)?.hidden;
 
               if (isHidden) {
                 return <Fragment key={index} />;
               }
+
+              const content = (parts ?? [])
+                .filter((part) => part.type === 'text')
+                .map((part) => part.text)
+                .join('');
 
               return (
                 <div
@@ -75,7 +80,6 @@ export const Messages = forwardRef<HTMLDivElement, MessagesProps>(
                     ) : (
                       <AssistantMessage
                         content={content}
-                        annotations={message.annotations}
                         messageId={messageId}
                         onRewind={handleRewind}
                         onFork={handleFork}
@@ -85,7 +89,6 @@ export const Messages = forwardRef<HTMLDivElement, MessagesProps>(
                         model={props.model}
                         provider={props.provider}
                         parts={parts}
-                        addToolResult={props.addToolResult}
                       />
                     )}
                   </div>

@@ -1,6 +1,6 @@
 import { BaseProvider } from '~/lib/modules/llm/base-provider';
 import type { ModelInfo } from '~/lib/modules/llm/types';
-import type { LanguageModelV1 } from 'ai';
+import type { LanguageModel } from 'ai';
 import type { IProviderSetting } from '~/types/model';
 import { createAmazonBedrock } from '@ai-sdk/amazon-bedrock';
 
@@ -96,7 +96,7 @@ export default class AmazonBedrockProvider extends BaseProvider {
     serverEnv: any;
     apiKeys?: Record<string, string>;
     providerSettings?: Record<string, IProviderSetting>;
-  }): LanguageModelV1 {
+  }): LanguageModel {
     const { model, serverEnv, apiKeys, providerSettings } = options;
 
     const { apiKey } = this.getProviderBaseUrlAndKey({
@@ -114,6 +114,6 @@ export default class AmazonBedrockProvider extends BaseProvider {
     const config = this._parseAndValidateConfig(apiKey);
     const bedrock = createAmazonBedrock(config);
 
-    return bedrock(model);
+    return bedrock(model) as unknown as LanguageModel;
   }
 }

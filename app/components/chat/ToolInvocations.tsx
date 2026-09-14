@@ -1,14 +1,9 @@
-import type { ToolInvocationUIPart } from '@ai-sdk/ui-utils';
+import type { DynamicToolUIPart } from 'ai';
 import { AnimatePresence, motion } from 'framer-motion';
-import { memo, useMemo, useState, useEffect } from 'react';
+import { memo, useMemo, useState } from 'react';
 import { createHighlighter, type BundledLanguage, type BundledTheme, type HighlighterGeneric } from 'shiki';
 import { classNames } from '~/utils/classNames';
-import {
-  TOOL_EXECUTION_APPROVAL,
-  TOOL_EXECUTION_DENIED,
-  TOOL_EXECUTION_ERROR,
-  TOOL_NO_EXECUTE_FUNCTION,
-} from '~/utils/constants';
+import { TOOL_EXECUTION_DENIED, TOOL_EXECUTION_ERROR, TOOL_NO_EXECUTE_FUNCTION } from '~/utils/constants';
 import { cubicEasingFn } from '~/utils/easings';
 import { logger } from '~/utils/logger';
 import { themeStore, type Theme } from '~/lib/stores/theme';
@@ -71,12 +66,11 @@ function JsonCodeBlock({ className, code, theme }: JsonCodeBlockProps) {
 }
 
 interface ToolInvocationsProps {
-  toolInvocations: ToolInvocationUIPart[];
+  toolInvocations: DynamicToolUIPart[];
   toolCallAnnotations: ToolCallAnnotation[];
-  addToolResult: ({ toolCallId, result }: { toolCallId: string; result: any }) => void;
 }
 
-export const ToolInvocations = memo(({ toolInvocations, toolCallAnnotations, addToolResult }: ToolInvocationsProps) => {
+export const ToolInvocations = memo(({ toolInvocations, toolCallAnnotations }: ToolInvocationsProps) => {
   const theme = useStore(themeStore);
   const [showDetails, setShowDetails] = useState(false);
 
@@ -84,33 +78,24 @@ export const ToolInvocations = memo(({ toolInvocations, toolCallAnnotations, add
     setShowDetails((prev) => !prev);
   };
 
+  /*
+   * Les outils MCP ont tous un `execute` côté serveur (voir mcpService.ts) —
+   * ils s'exécutent automatiquement dans la boucle streamText, jamais
+   * d'approbation client à faire ici. `input-streaming`/`input-available`
+   * ne sont vus que brièvement pendant que le résultat arrive.
+   */
   const toolCalls = useMemo(
-    () => toolInvocations.filter((inv) => inv.toolInvocation.state === 'call'),
+    () => toolInvocations.filter((inv) => inv.state === 'input-streaming' || inv.state === 'input-available'),
     [toolInvocations],
   );
 
   const toolResults = useMemo(
-    () => toolInvocations.filter((inv) => inv.toolInvocation.state === 'result'),
+    () => toolInvocations.filter((inv) => inv.state === 'output-available' || inv.state === 'output-error'),
     [toolInvocations],
   );
 
   const hasToolCalls = toolCalls.length > 0;
   const hasToolResults = toolResults.length > 0;
-
-  // Auto-exécuter les outils MCP sans demander confirmation (Run tool)
-  useEffect(() => {
-    if (toolCalls.length === 0) {
-      return;
-    }
-
-    for (const inv of toolCalls) {
-      const { toolCallId } = inv.toolInvocation;
-      addToolResult({
-        toolCallId,
-        result: TOOL_EXECUTION_APPROVAL.APPROVE,
-      });
-    }
-  }, [toolCalls, addToolResult]);
 
   if (!hasToolCalls && !hasToolResults) {
     return null;
@@ -200,7 +185,7 @@ const toolVariants = {
 };
 
 interface ToolResultsListProps {
-  toolInvocations: ToolInvocationUIPart[];
+  toolInvocations: DynamicToolUIPart[];
   toolCallAnnotations: ToolCallAnnotation[];
   theme: Theme;
 }
@@ -210,21 +195,20 @@ const ToolResultsList = memo(({ toolInvocations, toolCallAnnotations, theme }: T
     <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }} transition={{ duration: 0.15 }}>
       <ul className="list-none space-y-4">
         {toolInvocations.map((tool, index) => {
-          const toolCallState = tool.toolInvocation.state;
-
-          if (toolCallState !== 'result') {
+          if (tool.state !== 'output-available' && tool.state !== 'output-error') {
             return null;
           }
 
-          const { toolName, toolCallId } = tool.toolInvocation;
+          const { toolName, toolCallId } = tool;
+          const result = tool.state === 'output-available' ? tool.output : tool.errorText;
 
           const annotation = toolCallAnnotations.find((annotation) => {
             return annotation.toolCallId === toolCallId;
           });
 
-          const isErrorResult = [TOOL_NO_EXECUTE_FUNCTION, TOOL_EXECUTION_DENIED, TOOL_EXECUTION_ERROR].includes(
-            tool.toolInvocation.result,
-          );
+          const isErrorResult =
+            tool.state === 'output-error' ||
+            [TOOL_NO_EXECUTE_FUNCTION, TOOL_EXECUTION_DENIED, TOOL_EXECUTION_ERROR].includes(result as string);
 
           return (
             <motion.li
@@ -261,11 +245,11 @@ const ToolResultsList = memo(({ toolInvocations, toolCallAnnotations, theme }: T
                 </div>
                 <div className="text-bolt-elements-textSecondary text-xs mb-1">Parameters:</div>
                 <div className="bg-[#FAFAFA] dark:bg-[#0A0A0A] p-3 rounded-md">
-                  <JsonCodeBlock className="mb-0" code={JSON.stringify(tool.toolInvocation.args)} theme={theme} />
+                  <JsonCodeBlock className="mb-0" code={JSON.stringify(tool.input)} theme={theme} />
                 </div>
                 <div className="text-bolt-elements-textSecondary text-xs mt-3 mb-1">Result:</div>
                 <div className="bg-[#FAFAFA] dark:bg-[#0A0A0A] p-3 rounded-md">
-                  <JsonCodeBlock className="mb-0" code={JSON.stringify(tool.toolInvocation.result)} theme={theme} />
+                  <JsonCodeBlock className="mb-0" code={JSON.stringify(result)} theme={theme} />
                 </div>
               </div>
             </motion.li>

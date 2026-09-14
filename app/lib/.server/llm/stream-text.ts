@@ -1,4 +1,4 @@
-import { convertToCoreMessages, streamText as _streamText, wrapLanguageModel, type Message } from 'ai';
+import { convertToModelMessages, streamText as _streamText, type UIMessage } from 'ai';
 import { MAX_TOKENS, PROVIDER_COMPLETION_LIMITS, isReasoningModel, type FileMap } from './constants';
 import { getSystemPrompt } from '~/lib/common/prompts/prompts';
 import { DEFAULT_MODEL, DEFAULT_PROVIDER, MODIFICATIONS_TAG_NAME, PROVIDER_LIST, WORK_DIR } from '~/utils/constants';
@@ -10,14 +10,8 @@ import { createScopedLogger } from '~/utils/logger';
 import { createFilesContext, extractPropertiesFromMessage } from './utils';
 import { discussPrompt } from '~/lib/common/prompts/discuss-prompt';
 import type { DesignScheme } from '~/types/design-scheme';
-import { sanitizeToolsForGemini } from './sanitize-tools-for-gemini';
-import { sanitizeToolResultsForGemini } from './sanitize-tool-results-for-gemini';
-import {
-  sanitizeThoughtSignaturesForGemini,
-  createGeminiThoughtSignatureMiddleware,
-} from './sanitize-thought-signatures-for-gemini';
 
-export type Messages = Message[];
+export type Messages = UIMessage[];
 
 export interface StreamingOptions extends Omit<Parameters<typeof _streamText>[0], 'model'> {
   supabaseConnection?: {
@@ -63,7 +57,7 @@ function sanitizeText(text: string): string {
 }
 
 export async function streamText(props: {
-  messages: Omit<Message, 'id'>[];
+  messages: Omit<UIMessage, 'id'>[];
   env?: Env;
   options?: StreamingOptions;
   apiKeys?: Record<string, string>;
@@ -94,25 +88,25 @@ export async function streamText(props: {
   let currentModel = DEFAULT_MODEL;
   let currentProvider = DEFAULT_PROVIDER.name;
   let processedMessages = messages.map((message) => {
-    const newMessage = { ...message };
-
     if (message.role === 'user') {
-      const { model, provider, content } = extractPropertiesFromMessage(message);
+      const { model, provider, parts } = extractPropertiesFromMessage(message);
       currentModel = model;
       currentProvider = provider;
-      newMessage.content = sanitizeText(content);
-    } else if (message.role == 'assistant') {
-      newMessage.content = sanitizeText(message.content);
+
+      return {
+        ...message,
+        parts: parts.map((part) => (part.type === 'text' ? { ...part, text: sanitizeText(part.text) } : part)),
+      };
     }
 
-    // Sanitize all text parts in parts array, if present
-    if (Array.isArray(message.parts)) {
-      newMessage.parts = message.parts.map((part) =>
-        part.type === 'text' ? { ...part, text: sanitizeText(part.text) } : part,
-      );
+    if (message.role === 'assistant' && Array.isArray(message.parts)) {
+      return {
+        ...message,
+        parts: message.parts.map((part) => (part.type === 'text' ? { ...part, text: sanitizeText(part.text) } : part)),
+      };
     }
 
-    return newMessage;
+    return message;
   });
 
   const provider = PROVIDER_LIST.find((p) => p.name === currentProvider) || DEFAULT_PROVIDER;
@@ -240,7 +234,7 @@ export async function streamText(props: {
   // Log reasoning model detection and token parameters
   const isReasoning = isReasoningModel(modelDetails.name);
   logger.info(
-    `Model "${modelDetails.name}" is reasoning model: ${isReasoning}, using ${isReasoning ? 'maxCompletionTokens' : 'maxTokens'}: ${safeMaxTokens}`,
+    `Model "${modelDetails.name}" is reasoning model: ${isReasoning}, using maxOutputTokens: ${safeMaxTokens}`,
   );
 
   // Validate token limits before API call
@@ -250,8 +244,8 @@ export async function streamText(props: {
     );
   }
 
-  // Use maxCompletionTokens for reasoning models (o1, GPT-5), maxTokens for traditional models
-  const tokenParams = isReasoning ? { maxCompletionTokens: safeMaxTokens } : { maxTokens: safeMaxTokens };
+  // ai@5 unifie maxTokens/maxCompletionTokens (v4) sous un seul maxOutputTokens.
+  const tokenParams = { maxOutputTokens: safeMaxTokens };
 
   // Filter out unsupported parameters for reasoning models
   const filteredOptions =
@@ -272,15 +266,6 @@ export async function streamText(props: {
         )
       : options || {};
 
-  /*
-   * Gemini plante sur certains schémas d'outils MCP standards (tuple `items`, `oneOf`/`anyOf`) —
-   * voir sanitize-tools-for-gemini.ts pour le détail exact du bug. Ne simplifie le schéma que pour
-   * ce provider : les autres (Groq, etc.) reçoivent le schéma MCP original, sans perte de fidélité.
-   */
-  if (currentProvider === 'Google' && (filteredOptions as StreamingOptions).tools) {
-    (filteredOptions as StreamingOptions).tools = sanitizeToolsForGemini((filteredOptions as StreamingOptions).tools!);
-  }
-
   // DEBUG: Log filtered options
   logger.info(
     `DEBUG STREAM: Options filtering for model "${modelDetails.name}":`,
@@ -298,46 +283,26 @@ export async function streamText(props: {
     ),
   );
 
-  let coreMessages = convertToCoreMessages(processedMessages as any);
-
   /*
-   * Meme raison que sanitizeToolsForGemini ci-dessus, mais pour le resultat des
-   * outils plutot que leur schema : Gemini exige un objet dans
-   * function_response.response, jamais une valeur brute (chaine, nombre...).
-   * Voir sanitize-tool-results-for-gemini.ts pour le detail exact du bug.
+   * En ai@5 / @ai-sdk/google@2+, le provider Google gère nativement
+   * thought_signature (capture + rejeu, y compris le sentinel officiel
+   * skip_thought_signature_validator quand Gemini 3 en réclame une sans
+   * qu'on en ait une) et enveloppe systématiquement function_response.response
+   * dans un objet — les deux contournements maison précédents (sanitize-
+   * thought-signatures-for-gemini.ts, sanitize-tool-results-for-gemini.ts)
+   * sont donc obsolètes et ont été supprimés.
    */
-  if (currentProvider === 'Google') {
-    coreMessages = sanitizeToolResultsForGemini(coreMessages);
+  const modelMessages = convertToModelMessages(processedMessages as UIMessage[]);
 
-    /*
-     * Gemini 2.5/3 exige thought_signature sur chaque functionCall rejoué.
-     * L'historique client (et @ai-sdk/google 0.0.52) les perd souvent → 400.
-     * Sentinel officiel Google si signature absente.
-     */
-    coreMessages = sanitizeThoughtSignaturesForGemini(coreMessages);
-  }
-
-  const baseModel = provider.getModelInstance({
+  const model = provider.getModelInstance({
     model: modelDetails.name,
     serverEnv,
     apiKeys,
     providerSettings,
   });
 
-  /*
-   * `sanitizeThoughtSignaturesForGemini` ci-dessus ne patch que l'historique
-   * initial envoyé par le client. Mais `maxSteps` fait boucler `streamText`
-   * en interne (tool-call -> exécution -> nouvel appel modèle) : les
-   * tool-calls générés PAR le modèle pendant cette boucle ne repassent
-   * jamais par ce sanitizer et sont rejoués sans signature à l'étape
-   * suivante -> 400 Gemini. Ce middleware s'exécute avant CHAQUE appel au
-   * modèle (donc à chaque étape de la boucle), pas juste le premier.
-   */
   const streamParams = {
-    model:
-      currentProvider === 'Google'
-        ? wrapLanguageModel({ model: baseModel, middleware: createGeminiThoughtSignatureMiddleware() })
-        : baseModel,
+    model,
     system:
       chatMode === 'build'
         ? systemPrompt
@@ -349,7 +314,7 @@ export async function streamText(props: {
             mcpToolsAvailable,
           ),
     ...tokenParams,
-    messages: coreMessages,
+    messages: modelMessages,
     ...filteredOptions,
 
     // Set temperature to 1 for reasoning models (required by OpenAI API)
@@ -362,8 +327,7 @@ export async function streamText(props: {
     JSON.stringify(
       {
         hasTemperature: 'temperature' in streamParams,
-        hasMaxTokens: 'maxTokens' in streamParams,
-        hasMaxCompletionTokens: 'maxCompletionTokens' in streamParams,
+        hasMaxOutputTokens: 'maxOutputTokens' in streamParams,
         paramKeys: Object.keys(streamParams).filter((key) => !['model', 'messages', 'system'].includes(key)),
         streamParams: Object.fromEntries(
           Object.entries(streamParams).filter(([key]) => !['model', 'messages', 'system'].includes(key)),
@@ -374,5 +338,5 @@ export async function streamText(props: {
     ),
   );
 
-  return await _streamText(streamParams);
+  return await _streamText(streamParams as Parameters<typeof _streamText>[0]);
 }
