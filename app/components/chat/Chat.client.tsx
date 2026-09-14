@@ -545,6 +545,26 @@ export const ChatImpl = memo(
 
       const finalMessageContent = messageContent;
 
+      /*
+       * `mcpSettings` (lu via le hook plus haut) peut être encore la valeur par
+       * défaut (mcpServers: {}) si ce composant vient de monter : useMCPStore
+       * initialise sa config en async (fetch réseau) et le premier message
+       * d'une session fraîche peut partir AVANT que ça se termine — le
+       * serveur reçoit alors une config MCP vide et répond "aucun outil MCP
+       * connecté". On force l'attente ici, puis on relit le store à jour
+       * (plutôt que la closure `mcpSettings`, qui resterait périmée le temps
+       * de ce rendu) pour l'injecter explicitement dans le body de la requête.
+       */
+      if (!useMCPStore.getState().isInitialized) {
+        await useMCPStore.getState().initialize();
+      }
+
+      const freshMcpSettings = useMCPStore.getState().settings;
+      const mcpRequestBody = {
+        mcpConfig: freshMcpSettings.mcpConfig,
+        maxLLMSteps: freshMcpSettings.maxLLMSteps,
+      };
+
       runAnimation();
 
       if (!chatStarted) {
@@ -592,10 +612,12 @@ export const ChatImpl = memo(
                 },
               ]);
 
-              const reloadOptions =
-                uploadedFiles.length > 0
+              const reloadOptions = {
+                body: mcpRequestBody,
+                ...(uploadedFiles.length > 0
                   ? { experimental_attachments: await filesToAttachments(uploadedFiles) }
-                  : undefined;
+                  : {}),
+              };
 
               reload(reloadOptions);
               setInput('');
@@ -627,7 +649,7 @@ export const ChatImpl = memo(
             experimental_attachments: attachments,
           },
         ]);
-        reload(attachments ? { experimental_attachments: attachments } : undefined);
+        reload({ body: mcpRequestBody, ...(attachments ? { experimental_attachments: attachments } : {}) });
         setFakeLoading(false);
         setInput('');
         Cookies.remove(PROMPT_COOKIE_KEY);
@@ -654,8 +676,10 @@ export const ChatImpl = memo(
         const userUpdateArtifact = filesToArtifacts(modifiedFiles, `${Date.now()}`);
         const messageText = `[Model: ${model}]\n\n[Provider: ${provider.name}]\n\n${userUpdateArtifact}${finalMessageContent}`;
 
-        const attachmentOptions =
-          uploadedFiles.length > 0 ? { experimental_attachments: await filesToAttachments(uploadedFiles) } : undefined;
+        const attachmentOptions = {
+          body: mcpRequestBody,
+          ...(uploadedFiles.length > 0 ? { experimental_attachments: await filesToAttachments(uploadedFiles) } : {}),
+        };
 
         append(
           {
@@ -670,8 +694,10 @@ export const ChatImpl = memo(
       } else {
         const messageText = `[Model: ${model}]\n\n[Provider: ${provider.name}]\n\n${finalMessageContent}`;
 
-        const attachmentOptions =
-          uploadedFiles.length > 0 ? { experimental_attachments: await filesToAttachments(uploadedFiles) } : undefined;
+        const attachmentOptions = {
+          body: mcpRequestBody,
+          ...(uploadedFiles.length > 0 ? { experimental_attachments: await filesToAttachments(uploadedFiles) } : {}),
+        };
 
         append(
           {
