@@ -97,6 +97,21 @@ export const ToolInvocations = memo(({ toolInvocations, toolCallAnnotations, add
   const hasToolCalls = toolCalls.length > 0;
   const hasToolResults = toolResults.length > 0;
 
+  // Auto-exécuter les outils MCP sans demander confirmation (Run tool)
+  useEffect(() => {
+    if (toolCalls.length === 0) {
+      return;
+    }
+
+    for (const inv of toolCalls) {
+      const { toolCallId } = inv.toolInvocation;
+      addToolResult({
+        toolCallId,
+        result: TOOL_EXECUTION_APPROVAL.APPROVE,
+      });
+    }
+  }, [toolCalls, addToolResult]);
+
   if (!hasToolCalls && !hasToolResults) {
     return null;
   }
@@ -143,7 +158,7 @@ export const ToolInvocations = memo(({ toolInvocations, toolCallAnnotations, add
         </AnimatePresence>
       </div>
       <AnimatePresence>
-        {hasToolCalls && (
+        {hasToolCalls && !hasToolResults && (
           <motion.div
             className="details"
             initial={{ height: 0 }}
@@ -152,14 +167,9 @@ export const ToolInvocations = memo(({ toolInvocations, toolCallAnnotations, add
             transition={{ duration: 0.15 }}
           >
             <div className="bg-bolt-elements-artifacts-borderColor h-[1px]" />
-
-            <div className="px-3 py-3 text-left bg-bolt-elements-background-depth-2">
-              <ToolCallsList
-                toolInvocations={toolCalls}
-                toolCallAnnotations={toolCallAnnotations}
-                addToolResult={addToolResult}
-                theme={theme}
-              />
+            <div className="px-3 py-2 text-left bg-bolt-elements-background-depth-2 text-xs text-bolt-elements-textSecondary flex items-center gap-2">
+              <div className="i-svg-spinners:90-ring-with-bg w-3.5 h-3.5 animate-spin" />
+              Exécution automatique des outils MCP…
             </div>
           </motion.div>
         )}
@@ -256,148 +266,6 @@ const ToolResultsList = memo(({ toolInvocations, toolCallAnnotations, theme }: T
                 <div className="text-bolt-elements-textSecondary text-xs mt-3 mb-1">Result:</div>
                 <div className="bg-[#FAFAFA] dark:bg-[#0A0A0A] p-3 rounded-md">
                   <JsonCodeBlock className="mb-0" code={JSON.stringify(tool.toolInvocation.result)} theme={theme} />
-                </div>
-              </div>
-            </motion.li>
-          );
-        })}
-      </ul>
-    </motion.div>
-  );
-});
-
-interface ToolCallsListProps {
-  toolInvocations: ToolInvocationUIPart[];
-  toolCallAnnotations: ToolCallAnnotation[];
-  addToolResult: ({ toolCallId, result }: { toolCallId: string; result: any }) => void;
-  theme: Theme;
-}
-
-const ToolCallsList = memo(({ toolInvocations, toolCallAnnotations, addToolResult }: ToolCallsListProps) => {
-  const [expanded, setExpanded] = useState<{ [id: string]: boolean }>({});
-
-  // OS detection for shortcut display
-  const isMac = typeof navigator !== 'undefined' && /Mac|iPod|iPhone|iPad/.test(navigator.platform);
-
-  useEffect(() => {
-    const expandedState: { [id: string]: boolean } = {};
-    toolInvocations.forEach((inv) => {
-      if (inv.toolInvocation.state === 'call') {
-        expandedState[inv.toolInvocation.toolCallId] = true;
-      }
-    });
-    setExpanded(expandedState);
-  }, [toolInvocations]);
-
-  // Keyboard shortcut logic
-  useEffect(() => {
-    const handleKeyDown = (e: KeyboardEvent) => {
-      // Ignore if focus is in an input/textarea/contenteditable
-      const active = document.activeElement as HTMLElement | null;
-
-      if (active && (active.tagName === 'INPUT' || active.tagName === 'TEXTAREA' || active.isContentEditable)) {
-        return;
-      }
-
-      if (Object.keys(expanded).length === 0) {
-        return;
-      }
-
-      const openId = Object.keys(expanded).find((id) => expanded[id]);
-
-      if (!openId) {
-        return;
-      }
-
-      // Cancel: Cmd/Ctrl + Backspace
-      if ((isMac ? e.metaKey : e.ctrlKey) && e.key === 'Backspace') {
-        e.preventDefault();
-        addToolResult({
-          toolCallId: openId,
-          result: TOOL_EXECUTION_APPROVAL.REJECT,
-        });
-      }
-
-      // Run tool: Cmd/Ctrl + Enter
-      if ((isMac ? e.metaKey : e.ctrlKey) && (e.key === 'Enter' || e.key === 'Return')) {
-        e.preventDefault();
-        addToolResult({
-          toolCallId: openId,
-          result: TOOL_EXECUTION_APPROVAL.APPROVE,
-        });
-      }
-    };
-    window.addEventListener('keydown', handleKeyDown);
-
-    return () => window.removeEventListener('keydown', handleKeyDown);
-  }, [expanded, addToolResult, isMac]);
-
-  return (
-    <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }} transition={{ duration: 0.15 }}>
-      <ul className="list-none space-y-4">
-        {toolInvocations.map((tool, index) => {
-          const toolCallState = tool.toolInvocation.state;
-
-          if (toolCallState !== 'call') {
-            return null;
-          }
-
-          const { toolName, toolCallId } = tool.toolInvocation;
-          const annotation = toolCallAnnotations.find((annotation) => annotation.toolCallId === toolCallId);
-
-          return (
-            <motion.li
-              key={index}
-              variants={toolVariants}
-              initial="hidden"
-              animate="visible"
-              transition={{ duration: 0.2, ease: cubicEasingFn }}
-            >
-              <div className="bg-bolt-elements-background-depth-3 rounded-lg p-2">
-                <div key={toolCallId} className="flex gap-1">
-                  <div className="flex flex-col items-center ">
-                    <span className="mr-auto font-light font-normal text-md text-bolt-elements-textPrimary rounded-md">
-                      {toolName}
-                    </span>
-                    <span className="text-xs text-bolt-elements-textSecondary font-light break-words max-w-64">
-                      {annotation?.toolDescription}
-                    </span>
-                  </div>
-                  <div className="flex items-center justify-end gap-2 ml-auto">
-                    <button
-                      className={classNames(
-                        'h-10 px-2.5 py-1.5 rounded-lg text-xs h-auto',
-                        'bg-transparent',
-                        'text-bolt-elements-textTertiary hover:text-bolt-elements-textPrimary',
-                        'transition-all duration-200',
-                        'flex items-center gap-2',
-                      )}
-                      onClick={() =>
-                        addToolResult({
-                          toolCallId,
-                          result: TOOL_EXECUTION_APPROVAL.REJECT,
-                        })
-                      }
-                    >
-                      Cancel <span className="opacity-70 text-xs ml-1">{isMac ? '⌘⌫' : 'Ctrl+Backspace'}</span>
-                    </button>
-                    <button
-                      className={classNames(
-                        'h-10 inline-flex items-center gap-2 px-3 py-1.5 text-xs font-normal rounded-lg transition-colors',
-                        'bg-bolt-elements-background-depth-2 border border-bolt-elements-borderColor',
-                        'text-accent-500 hover:text-bolt-elements-textPrimary',
-                        'disabled:opacity-50 disabled:cursor-not-allowed',
-                      )}
-                      onClick={() =>
-                        addToolResult({
-                          toolCallId,
-                          result: TOOL_EXECUTION_APPROVAL.APPROVE,
-                        })
-                      }
-                    >
-                      Run tool <span className="opacity-70 text-xs ml-1">{isMac ? '⌘↵' : 'Ctrl+Enter'}</span>
-                    </button>
-                  </div>
                 </div>
               </div>
             </motion.li>
