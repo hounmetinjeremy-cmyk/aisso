@@ -5,27 +5,6 @@ import { toast } from 'react-toastify';
 import { useMCPStore } from '~/lib/stores/mcp';
 import McpServerList from '~/components/@settings/tabs/mcp/McpServerList';
 
-const EXAMPLE_MCP_CONFIG: MCPConfig = {
-  mcpServers: {
-    everything: {
-      type: 'stdio',
-      command: 'npx',
-      args: ['-y', '@modelcontextprotocol/server-everything'],
-    },
-    deepwiki: {
-      type: 'streamable-http',
-      url: 'https://mcp.deepwiki.com/mcp',
-    },
-    'local-sse': {
-      type: 'sse',
-      url: 'http://localhost:8000/sse',
-      headers: {
-        Authorization: 'Bearer mytoken123',
-      },
-    },
-  },
-};
-
 export default function McpTab() {
   const settings = useMCPStore((state) => state.settings);
   const isInitialized = useMCPStore((state) => state.isInitialized);
@@ -35,11 +14,15 @@ export default function McpTab() {
   const checkServersAvailabilities = useMCPStore((state) => state.checkServersAvailabilities);
 
   const [isSaving, setIsSaving] = useState(false);
-  const [mcpConfigText, setMCPConfigText] = useState('');
-  const [maxLLMSteps, setMaxLLMSteps] = useState(1);
+  const [maxLLMSteps, setMaxLLMSteps] = useState(5);
   const [error, setError] = useState<string | null>(null);
   const [isCheckingServers, setIsCheckingServers] = useState(false);
   const [expandedServer, setExpandedServer] = useState<string | null>(null);
+
+  // Simple form state
+  const [newServerName, setNewServerName] = useState('');
+  const [newServerUrl, setNewServerUrl] = useState('');
+  const [isAdding, setIsAdding] = useState(false);
 
   useEffect(() => {
     if (!isInitialized) {
@@ -51,51 +34,114 @@ export default function McpTab() {
   }, [isInitialized]);
 
   useEffect(() => {
-    setMCPConfigText(JSON.stringify(settings.mcpConfig, null, 2));
     setMaxLLMSteps(settings.maxLLMSteps);
     setError(null);
   }, [settings]);
 
-  const parsedConfig = useMemo(() => {
-    try {
-      setError(null);
-      return JSON.parse(mcpConfigText) as MCPConfig;
-    } catch (e) {
-      setError(`Invalid JSON format: ${e instanceof Error ? e.message : String(e)}`);
-      return null;
-    }
-  }, [mcpConfigText]);
+  const serverEntries = useMemo(() => Object.entries(serverTools), [serverTools]);
 
-  const handleMaxLLMCallChange = (value: string) => {
-    setMaxLLMSteps(parseInt(value, 10));
-  };
+  const handleAddServer = async () => {
+    const name = newServerName.trim();
+    const url = newServerUrl.trim();
 
-  const handleSave = async () => {
-    if (!parsedConfig) {
+    if (!name) {
+      setError('Le nom du serveur est requis.');
       return;
     }
 
-    setIsSaving(true);
+    if (!url) {
+      setError("L'URL du serveur est requise.");
+      return;
+    }
 
     try {
+      // Basic URL validation
+      new URL(url);
+    } catch {
+      setError("L'URL n'est pas valide.");
+      return;
+    }
+
+    if (settings.mcpConfig.mcpServers[name]) {
+      setError(`Un serveur nommé "${name}" existe déjà.`);
+      return;
+    }
+
+    setIsAdding(true);
+    setError(null);
+
+    try {
+      const newConfig: MCPConfig = {
+        ...settings.mcpConfig,
+        mcpServers: {
+          ...settings.mcpConfig.mcpServers,
+          [name]: {
+            type: 'streamable-http',
+            url,
+          },
+        },
+      };
+
       await updateSettings({
-        mcpConfig: parsedConfig,
+        mcpConfig: newConfig,
         maxLLMSteps,
       });
-      toast.success('MCP configuration saved');
 
-      setError(null);
+      toast.success(`Connecteur "${name}" ajouté`);
+      setNewServerName('');
+      setNewServerUrl('');
     } catch (e) {
-      setError(e instanceof Error ? e.message : 'Failed to save configuration');
-      toast.error('Failed to save MCP configuration');
+      const msg = e instanceof Error ? e.message : "Échec de l'ajout du connecteur";
+      setError(msg);
+      toast.error(msg);
+    } finally {
+      setIsAdding(false);
+    }
+  };
+
+  const handleRemoveServer = async (serverName: string) => {
+    setIsSaving(true);
+    setError(null);
+
+    try {
+      const { [serverName]: _, ...remaining } = settings.mcpConfig.mcpServers;
+
+      await updateSettings({
+        mcpConfig: { mcpServers: remaining },
+        maxLLMSteps,
+      });
+
+      toast.success(`Connecteur "${serverName}" supprimé`);
+
+      if (expandedServer === serverName) {
+        setExpandedServer(null);
+      }
+    } catch (e) {
+      const msg = e instanceof Error ? e.message : 'Échec de la suppression';
+      setError(msg);
+      toast.error(msg);
     } finally {
       setIsSaving(false);
     }
   };
 
-  const handleLoadExample = () => {
-    setMCPConfigText(JSON.stringify(EXAMPLE_MCP_CONFIG, null, 2));
+  const handleSaveMaxSteps = async () => {
+    setIsSaving(true);
     setError(null);
+
+    try {
+      await updateSettings({
+        mcpConfig: settings.mcpConfig,
+        maxLLMSteps,
+      });
+      toast.success('Paramètres sauvegardés');
+    } catch (e) {
+      const msg = e instanceof Error ? e.message : 'Échec de la sauvegarde';
+      setError(msg);
+      toast.error(msg);
+    } finally {
+      setIsSaving(false);
+    }
   };
 
   const checkServerAvailability = async () => {
@@ -119,16 +165,76 @@ export default function McpTab() {
     setExpandedServer(expandedServer === serverName ? null : serverName);
   };
 
-  const serverEntries = useMemo(() => Object.entries(serverTools), [serverTools]);
-
   return (
     <div className="max-w-2xl mx-auto space-y-6">
+      {/* Formulaire simple d'ajout de connecteur */}
+      <section aria-labelledby="add-connector-heading">
+        <h2 id="add-connector-heading" className="text-base font-medium text-bolt-elements-textPrimary mb-3">
+          Ajouter un connecteur MCP
+        </h2>
+
+        <div className="space-y-3 p-4 rounded-lg border border-bolt-elements-borderColor bg-bolt-elements-background-depth-1">
+          <div>
+            <label htmlFor="mcp-server-name" className="block text-sm text-bolt-elements-textSecondary mb-1.5">
+              Nom
+            </label>
+            <input
+              id="mcp-server-name"
+              type="text"
+              placeholder="ex: GitHub MCP"
+              value={newServerName}
+              onChange={(e) => setNewServerName(e.target.value)}
+              className="w-full px-3 py-2 text-sm rounded-lg bg-white dark:bg-bolt-elements-background-depth-4 border border-bolt-elements-borderColor text-bolt-elements-textPrimary focus:outline-none focus:ring-2 focus:ring-blue-500"
+            />
+          </div>
+
+          <div>
+            <label htmlFor="mcp-server-url" className="block text-sm text-bolt-elements-textSecondary mb-1.5">
+              URL du serveur
+            </label>
+            <input
+              id="mcp-server-url"
+              type="url"
+              placeholder="https://mcp.example.com/mcp"
+              value={newServerUrl}
+              onChange={(e) => setNewServerUrl(e.target.value)}
+              className="w-full px-3 py-2 text-sm rounded-lg bg-white dark:bg-bolt-elements-background-depth-4 border border-bolt-elements-borderColor text-bolt-elements-textPrimary focus:outline-none focus:ring-2 focus:ring-blue-500"
+            />
+          </div>
+
+          {error && <p className="text-sm text-bolt-elements-icon-error">{error}</p>}
+
+          <div className="flex justify-end pt-1">
+            <button
+              onClick={handleAddServer}
+              disabled={isAdding || !newServerName.trim() || !newServerUrl.trim()}
+              className={classNames(
+                'px-4 py-2 rounded-lg text-sm flex items-center gap-2',
+                'bg-bolt-elements-item-backgroundAccent text-bolt-elements-item-contentAccent',
+                'hover:bg-bolt-elements-item-backgroundActive',
+                'disabled:opacity-50 disabled:cursor-not-allowed',
+              )}
+            >
+              {isAdding ? (
+                <div className="i-svg-spinners:90-ring-with-bg w-4 h-4 animate-spin" />
+              ) : (
+                <div className="i-ph:plus w-4 h-4" />
+              )}
+              {isAdding ? 'Ajout…' : 'Ajouter le connecteur'}
+            </button>
+          </div>
+        </div>
+      </section>
+
+      {/* Liste des serveurs déjà configurés */}
       <section aria-labelledby="server-status-heading">
         <div className="flex justify-between items-center mb-3">
-          <h2 className="text-base font-medium text-bolt-elements-textPrimary">MCP Servers Configured</h2>{' '}
+          <h2 id="server-status-heading" className="text-base font-medium text-bolt-elements-textPrimary">
+            Serveurs MCP configurés
+          </h2>
           <button
             onClick={checkServerAvailability}
-            disabled={isCheckingServers || !parsedConfig || serverEntries.length === 0}
+            disabled={isCheckingServers || serverEntries.length === 0}
             className={classNames(
               'px-3 py-1.5 rounded-lg text-sm',
               'bg-bolt-elements-background-depth-3 hover:bg-bolt-elements-background-depth-4',
@@ -143,97 +249,73 @@ export default function McpTab() {
             ) : (
               <div className="i-ph:arrow-counter-clockwise w-3 h-3" />
             )}
-            Check availability
+            Vérifier disponibilité
           </button>
         </div>
+
         <McpServerList
           checkingServers={isCheckingServers}
           expandedServer={expandedServer}
           serverEntries={serverEntries}
           toggleServerExpanded={toggleServerExpanded}
         />
+
+        {/* Boutons de suppression rapide */}
+        {serverEntries.length > 0 && (
+          <div className="mt-3 flex flex-wrap gap-2">
+            {serverEntries.map(([name]) => (
+              <button
+                key={`remove-${name}`}
+                onClick={() => handleRemoveServer(name)}
+                disabled={isSaving}
+                className="text-xs px-2 py-1 rounded border border-red-300 dark:border-red-800 text-red-600 dark:text-red-400 hover:bg-red-50 dark:hover:bg-red-900/20 disabled:opacity-50"
+              >
+                Supprimer « {name} »
+              </button>
+            ))}
+          </div>
+        )}
       </section>
 
-      <section aria-labelledby="config-section-heading">
-        <h2 className="text-base font-medium text-bolt-elements-textPrimary mb-3">Configuration</h2>
+      {/* Paramètres avancés (max steps) */}
+      <section aria-labelledby="advanced-heading">
+        <h2 id="advanced-heading" className="text-base font-medium text-bolt-elements-textPrimary mb-3">
+          Paramètres
+        </h2>
 
-        <div className="space-y-4">
+        <div className="space-y-3">
           <div>
-            <label htmlFor="mcp-config" className="block text-sm text-bolt-elements-textSecondary mb-2">
-              Configuration JSON
-            </label>
-            <textarea
-              id="mcp-config"
-              value={mcpConfigText}
-              onChange={(e) => setMCPConfigText(e.target.value)}
-              className={classNames(
-                'w-full px-3 py-2 rounded-lg text-sm font-mono h-72',
-                'bg-[#F8F8F8] dark:bg-[#1A1A1A]',
-                'border',
-                error ? 'border-bolt-elements-icon-error' : 'border-[#E5E5E5] dark:border-[#333333]',
-                'text-bolt-elements-textPrimary',
-                'focus:outline-none focus:ring-1 focus:ring-bolt-elements-focus',
-              )}
-            />
-          </div>
-          <div>{error && <p className="mt-2 mb-2 text-sm text-bolt-elements-icon-error">{error}</p>}</div>
-          <div>
-            <label htmlFor="max-llm-steps" className="block text-sm text-bolt-elements-textSecondary mb-2">
-              Maximum number of sequential LLM calls (steps)
+            <label htmlFor="max-llm-steps" className="block text-sm text-bolt-elements-textSecondary mb-1.5">
+              Nombre maximum d’appels LLM séquentiels
             </label>
             <input
               id="max-llm-steps"
               type="number"
-              placeholder="Maximum number of sequential LLM calls"
               min="1"
               max="20"
               value={maxLLMSteps}
-              onChange={(e) => handleMaxLLMCallChange(e.target.value)}
-              className="w-full px-3 py-2 text-bolt-elements-textPrimary text-sm rounded-lg bg-white dark:bg-bolt-elements-background-depth-4 border border-bolt-elements-borderColor dark:border-bolt-elements-borderColor-dark focus:outline-none focus:ring-2 focus:ring-blue-500"
+              onChange={(e) => setMaxLLMSteps(parseInt(e.target.value, 10) || 1)}
+              className="w-full px-3 py-2 text-sm rounded-lg bg-white dark:bg-bolt-elements-background-depth-4 border border-bolt-elements-borderColor text-bolt-elements-textPrimary focus:outline-none focus:ring-2 focus:ring-blue-500"
             />
           </div>
-          <div className="mt-2 text-sm text-bolt-elements-textSecondary">
-            The MCP configuration format is identical to the one used in Claude Desktop.
-            <a
-              href="https://modelcontextprotocol.io/examples"
-              target="_blank"
-              rel="noopener noreferrer"
-              className="text-bolt-elements-link hover:underline inline-flex items-center gap-1"
+
+          <div className="flex justify-end">
+            <button
+              onClick={handleSaveMaxSteps}
+              disabled={isSaving}
+              className={classNames(
+                'px-4 py-2 rounded-lg text-sm flex items-center gap-2',
+                'bg-bolt-elements-item-backgroundAccent text-bolt-elements-item-contentAccent',
+                'hover:bg-bolt-elements-item-backgroundActive',
+                'disabled:opacity-50 disabled:cursor-not-allowed',
+              )}
             >
-              View example servers
-              <div className="i-ph:arrow-square-out w-4 h-4" />
-            </a>
+              <div className="i-ph:floppy-disk w-4 h-4" />
+              {isSaving ? 'Sauvegarde…' : 'Sauvegarder'}
+            </button>
           </div>
         </div>
       </section>
-
-      <div className="flex flex-wrap justify-between gap-3 mt-6">
-        <button
-          onClick={handleLoadExample}
-          className="px-4 py-2 rounded-lg text-sm border border-bolt-elements-borderColor
-                    bg-bolt-elements-background-depth-2 text-bolt-elements-textSecondary
-                    hover:bg-bolt-elements-background-depth-3"
-        >
-          Load Example
-        </button>
-
-        <div className="flex gap-2">
-          <button
-            onClick={handleSave}
-            disabled={isSaving || !parsedConfig}
-            aria-disabled={isSaving || !parsedConfig}
-            className={classNames(
-              'px-4 py-2 rounded-lg text-sm flex items-center gap-2',
-              'bg-bolt-elements-item-backgroundAccent text-bolt-elements-item-contentAccent',
-              'hover:bg-bolt-elements-item-backgroundActive',
-              'disabled:opacity-50 disabled:cursor-not-allowed',
-            )}
-          >
-            <div className="i-ph:floppy-disk w-4 h-4" />
-            {isSaving ? 'Saving...' : 'Save Configuration'}
-          </button>
-        </div>
-      </div>
     </div>
   );
 }
