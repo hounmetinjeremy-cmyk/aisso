@@ -35,8 +35,11 @@ const MAX_FILE_BYTES = 5_000_000;
  * planter le Worker en plein import. En les traitant par petits lots, on ne
  * garde jamais plus que BATCH_SIZE fichiers "en vol" a la fois, quelle que
  * soit la taille totale du depot.
+ *
+ * chunkSize = 5 demandé explicitement pour garantir la stabilité sur mobile
+ * et éviter la saturation navigateur / Worker lors d'imports de 150-200+ fichiers.
  */
-const BATCH_SIZE = 20;
+const BATCH_SIZE = 5;
 
 function githubHeaders(token: string) {
   return {
@@ -148,8 +151,9 @@ export async function importRepoFiles(
    * passer au suivant — permet a l'appelant (voir /api/deploy/import) de
    * les ecrire immediatement quelque part (Supabase) sans attendre la fin
    * de tout l'import, et sans que cette fonction ait besoin de savoir ou.
+   * Progress: { current, total } pour affichage côté client.
    */
-  onBatch?: (files: ImportedFile[]) => Promise<void>,
+  onBatch?: (files: ImportedFile[], progress: { current: number; total: number }) => Promise<void>,
 ): Promise<ImportResult> {
   const { owner, repo, branch } = params;
 
@@ -176,6 +180,7 @@ export async function importRepoFiles(
 
   const importedFiles: ImportedFile[] = [];
   let failedBlobFetches = 0;
+  const total = blobEntries.length;
 
   for (let i = 0; i < blobEntries.length; i += BATCH_SIZE) {
     const batchEntries = blobEntries.slice(i, i + BATCH_SIZE);
@@ -185,10 +190,16 @@ export async function importRepoFiles(
     failedBlobFetches += batchEntries.length - batchFiles.length;
 
     if (onBatch && batchFiles.length > 0) {
-      await onBatch(batchFiles);
+      const current = Math.min(i + BATCH_SIZE, total);
+      await onBatch(batchFiles, { current, total });
     }
 
     importedFiles.push(...batchFiles);
+
+    // Légère pause pour laisser respirer le processeur / éviter la saturation sur mobile
+    if (i + BATCH_SIZE < blobEntries.length) {
+      await new Promise((r) => setTimeout(r, 50));
+    }
   }
 
   /*
