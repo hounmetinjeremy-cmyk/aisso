@@ -139,7 +139,6 @@ export class MCPService {
       throw new Error(`provided "type" is invalid, only "stdio", "sse" or "streamable-http" are valid options.`);
     }
 
-    // Check for type/field mismatch
     if (config.type === 'stdio' && !hasStdioField) {
       throw new Error(`missing "command" field.`);
     }
@@ -179,9 +178,11 @@ export class MCPService {
    */
   async ensureConfig(config: MCPConfig): Promise<void> {
     const configChanged = JSON.stringify(config) !== JSON.stringify(this._config);
-    const neverInitialized = Object.keys(this._toolsWithoutExecute).length === 0;
+    const neverInitialized = Object.keys(this._tools).length === 0;
     const hasServersConfigured = Object.keys(config?.mcpServers || {}).length > 0;
 
+    // Toujours (re)charger si aucun outil enregistré sur cet isolate — critique pour
+    // processToolInvocations après approbation client ("Yes, approved.").
     if (hasServersConfigured && (configChanged || neverInitialized)) {
       await this.updateConfig(config);
     }
@@ -394,76 +395,94 @@ export class MCPService {
   }
 
   async processToolInvocations(messages: Message[], dataStream: DataStreamWriter): Promise<Message[]> {
-    const lastMessage = messages[messages.length - 1];
-    const parts = lastMessage.parts;
+    /*
+     * Parcourt TOUS les messages (pas seulement le dernier) : l'approbation client
+     * ("Yes, approved.") doit déclencher l'exécution MCP réelle, sinon l'UI affiche
+     * le texte d'approbation au lieu du résultat list_repos / etc.
+     */
+    const out: Message[] = [];
 
-    if (!parts) {
-      return messages;
-    }
+    for (const message of messages) {
+      const parts = message.parts;
 
-    const processedParts = await Promise.all(
-      parts.map(async (part) => {
-        // Only process tool invocations parts
-        if (part.type !== 'tool-invocation') {
-          return part;
-        }
+      if (!parts || message.role !== 'assistant') {
+        out.push(message);
+        continue;
+      }
 
-        const { toolInvocation } = part;
-        const { toolName, toolCallId } = toolInvocation;
+      const processedParts = await Promise.all(
+        parts.map(async (part) => {
+          if (part.type !== 'tool-invocation') {
+            return part;
+          }
 
-        // return part as-is if tool does not exist, or if it's not a tool call result
-        if (!this.isValidToolName(toolName) || toolInvocation.state !== 'result') {
-          return part;
-        }
+          const { toolInvocation } = part;
+          const { toolName, toolCallId } = toolInvocation;
 
-        let result;
+          if (toolInvocation.state !== 'result') {
+            return part;
+          }
 
-        if (toolInvocation.result === TOOL_EXECUTION_APPROVAL.APPROVE) {
-          const toolInstance = this._tools[toolName];
+          // Déjà un vrai résultat MCP (objet / tableau) — ne pas retraiter
+          if (
+            toolInvocation.result !== TOOL_EXECUTION_APPROVAL.APPROVE &&
+            toolInvocation.result !== TOOL_EXECUTION_APPROVAL.REJECT
+          ) {
+            return part;
+          }
 
-          if (toolInstance && typeof toolInstance.execute === 'function') {
-            logger.debug(`calling tool "${toolName}" with args: ${JSON.stringify(toolInvocation.args)}`);
+          let result;
 
-            try {
-              result = await toolInstance.execute(toolInvocation.args, {
-                messages: convertToCoreMessages(messages),
-                toolCallId,
-              });
-            } catch (error) {
-              logger.error(`error while calling tool "${toolName}":`, error);
-              result = TOOL_EXECUTION_ERROR;
+          if (toolInvocation.result === TOOL_EXECUTION_APPROVAL.APPROVE) {
+            if (!this.isValidToolName(toolName)) {
+              logger.error(
+                `tool "${toolName}" not registered after ensureConfig (tools: ${Object.keys(this._tools).join(', ')})`,
+              );
+              result = `Error: Tool "${toolName}" is not available. Reconnect MCP server in Settings.`;
+            } else {
+              const toolInstance = this._tools[toolName];
+
+              if (toolInstance && typeof toolInstance.execute === 'function') {
+                logger.debug(`calling tool "${toolName}" with args: ${JSON.stringify(toolInvocation.args)}`);
+
+                try {
+                  result = await toolInstance.execute(toolInvocation.args, {
+                    messages: convertToCoreMessages(messages),
+                    toolCallId,
+                  });
+                } catch (error) {
+                  logger.error(`error while calling tool "${toolName}":`, error);
+                  result = TOOL_EXECUTION_ERROR + (error instanceof Error ? `: ${error.message}` : '');
+                }
+              } else {
+                result = TOOL_NO_EXECUTE_FUNCTION;
+              }
             }
           } else {
-            result = TOOL_NO_EXECUTE_FUNCTION;
+            result = TOOL_EXECUTION_DENIED;
           }
-        } else if (toolInvocation.result === TOOL_EXECUTION_APPROVAL.REJECT) {
-          result = TOOL_EXECUTION_DENIED;
-        } else {
-          // For any unhandled responses, return the original part.
-          return part;
-        }
 
-        // Forward updated tool result to the client.
-        dataStream.write(
-          formatDataStreamPart('tool_result', {
-            toolCallId,
-            result,
-          }),
-        );
+          dataStream.write(
+            formatDataStreamPart('tool_result', {
+              toolCallId,
+              result,
+            }),
+          );
 
-        // Return updated toolInvocation with the actual result.
-        return {
-          ...part,
-          toolInvocation: {
-            ...toolInvocation,
-            result,
-          },
-        };
-      }),
-    );
+          return {
+            ...part,
+            toolInvocation: {
+              ...toolInvocation,
+              result,
+            },
+          };
+        }),
+      );
 
-    // Finally return the processed messages
-    return [...messages.slice(0, -1), { ...lastMessage, parts: processedParts }];
+      out.push({ ...message, parts: processedParts });
+    }
+
+    return out;
   }
 
   get tools() {
