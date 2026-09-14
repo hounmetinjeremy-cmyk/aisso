@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react';
-import { useSearchParams, Link } from '@remix-run/react';
+import { useSearchParams, Link, useNavigate } from '@remix-run/react';
 import {
   loadPendingOAuth,
   clearPendingOAuth,
@@ -10,6 +10,7 @@ import type { MCPConfig } from '~/lib/services/mcpService';
 
 export default function McpOAuthCallback() {
   const [searchParams] = useSearchParams();
+  const navigate = useNavigate();
   const [status, setStatus] = useState<'loading' | 'success' | 'error'>('loading');
   const [message, setMessage] = useState('Finalisation de la connexion…');
   const updateSettings = useMCPStore((s) => s.updateSettings);
@@ -63,7 +64,6 @@ export default function McpOAuthCallback() {
         return;
       }
 
-      // Expire after 15 minutes
       if (Date.now() - pending.createdAt > 15 * 60 * 1000) {
         setStatus('error');
         setMessage('Session OAuth expirée. Recommencez.');
@@ -78,7 +78,6 @@ export default function McpOAuthCallback() {
           throw new Error('Aucun access_token reçu');
         }
 
-        // Inject Authorization header into the MCP server config
         const existing = settings.mcpConfig.mcpServers[pending.serverName];
 
         if (!existing) {
@@ -107,17 +106,22 @@ export default function McpOAuthCallback() {
 
         clearPendingOAuth();
         setStatus('success');
-        setMessage(`Compte connecté pour « ${pending.serverName} ». Vous pouvez fermer cette page.`);
+        setMessage(`Compte connecté pour « ${pending.serverName} ». Choisis maintenant un dépôt.`);
+
+        // Redirection automatique vers la sélection de dépôt
+        setTimeout(() => {
+          navigate('/select-repo');
+        }, 1500);
       } catch (e) {
         console.error('[mcp-oauth] callback error', e);
         setStatus('error');
-        setMessage(e instanceof Error ? e.message : 'Échec de l\'échange du code OAuth');
+        setMessage(e instanceof Error ? e.message : "Échec de l'échange du code OAuth");
         clearPendingOAuth();
       }
     };
 
     void run();
-  }, [isInitialized, searchParams, settings, updateSettings]);
+  }, [isInitialized, searchParams, settings, updateSettings, navigate]);
 
   return (
     <div className="min-h-screen flex items-center justify-center bg-bolt-elements-background-depth-1 p-4">
@@ -134,11 +138,12 @@ export default function McpOAuthCallback() {
             <div className="i-ph:check-circle w-12 h-12 mx-auto text-green-500" />
             <h1 className="text-lg font-semibold text-bolt-elements-textPrimary">Connexion réussie</h1>
             <p className="text-sm text-bolt-elements-textSecondary">{message}</p>
+            <p className="text-xs text-bolt-elements-textTertiary">Redirection vers le choix du dépôt…</p>
             <Link
-              to="/"
+              to="/select-repo"
               className="inline-block mt-2 px-4 py-2 rounded-lg text-sm bg-bolt-elements-item-backgroundAccent text-bolt-elements-item-contentAccent"
             >
-              Retour à Aïsso
+              Choisir un dépôt maintenant
             </Link>
           </>
         )}
