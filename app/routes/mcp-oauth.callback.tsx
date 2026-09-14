@@ -85,6 +85,7 @@ export default function McpOauthCallback() {
             tokenEndpoint: pending.tokenEndpoint,
             clientId: pending.clientId || 'aisso',
             clientSecret: pending.clientSecret,
+            resource: pending.serverUrl,
             expiresAt: tokens.expires_in ? Date.now() + tokens.expires_in * 1000 : undefined,
           });
         }

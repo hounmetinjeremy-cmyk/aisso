@@ -134,6 +134,9 @@ export type McpOAuthTokenMeta = {
   clientId: string;
   clientSecret?: string;
 
+  /** URL canonique du serveur MCP — requis pour le grant refresh_token (RFC 8707). */
+  resource: string;
+
   /** epoch ms — undefined si le serveur n'a pas renvoyé expires_in */
   expiresAt?: number;
 };
@@ -187,6 +190,7 @@ async function refreshAccessToken(meta: McpOAuthTokenMeta): Promise<{
     grant_type: 'refresh_token',
     refresh_token: meta.refreshToken,
     client_id: meta.clientId,
+    resource: meta.resource,
   });
 
   if (meta.clientSecret) {
@@ -260,6 +264,7 @@ export async function discoverOAuthEndpoints(serverUrl: string): Promise<{
   authorizationEndpoint: string;
   tokenEndpoint: string;
   registrationEndpoint?: string;
+  scopesSupported?: string[];
 }> {
   const origin = getServerOrigin(serverUrl);
 
@@ -284,6 +289,7 @@ export async function discoverOAuthEndpoints(serverUrl: string): Promise<{
             authorization_endpoint?: string;
             token_endpoint?: string;
             registration_endpoint?: string;
+            scopes_supported?: string[];
           };
 
           if (meta.authorization_endpoint && meta.token_endpoint) {
@@ -291,6 +297,7 @@ export async function discoverOAuthEndpoints(serverUrl: string): Promise<{
               authorizationEndpoint: meta.authorization_endpoint,
               tokenEndpoint: meta.token_endpoint,
               registrationEndpoint: meta.registration_endpoint,
+              scopesSupported: meta.scopes_supported,
             };
           }
         }
@@ -311,6 +318,7 @@ export async function discoverOAuthEndpoints(serverUrl: string): Promise<{
         authorization_endpoint?: string;
         token_endpoint?: string;
         registration_endpoint?: string;
+        scopes_supported?: string[];
       };
 
       if (meta.authorization_endpoint && meta.token_endpoint) {
@@ -318,6 +326,7 @@ export async function discoverOAuthEndpoints(serverUrl: string): Promise<{
           authorizationEndpoint: meta.authorization_endpoint,
           tokenEndpoint: meta.token_endpoint,
           registrationEndpoint: meta.registration_endpoint,
+          scopesSupported: meta.scopes_supported,
         };
       }
     }
@@ -380,6 +389,7 @@ export async function startMcpOAuthFlow(serverName: string, serverUrl: string): 
     authorizationEndpoint: string;
     tokenEndpoint: string;
     registrationEndpoint?: string;
+    scopesSupported?: string[];
   };
 
   try {
@@ -428,7 +438,20 @@ export async function startMcpOAuthFlow(serverName: string, serverUrl: string): 
   authUrl.searchParams.set('state', state);
   authUrl.searchParams.set('code_challenge', codeChallenge);
   authUrl.searchParams.set('code_challenge_method', 'S256');
-  authUrl.searchParams.set('scope', 'openid profile email');
+
+  /*
+   * RFC 8707 (resource indicators) — la spec MCP Authorization exige que le
+   * client précise pour QUEL serveur de ressource (l'URL canonique du
+   * serveur MCP) le token est demandé. Sans ça, un serveur MCP strict (cas
+   * de remote-mcp-github-oauth) émet un token qui n'est pas lié à cette
+   * ressource et le rejette ensuite avec "invalid_token" dès la première
+   * requête — même juste après une connexion réussie.
+   */
+  authUrl.searchParams.set('resource', serverUrl);
+
+  if (endpoints.scopesSupported?.length) {
+    authUrl.searchParams.set('scope', endpoints.scopesSupported.join(' '));
+  }
 
   const target = authUrl.toString();
   console.info('[mcp-oauth] redirecting to authorize:', target);
@@ -454,6 +477,9 @@ export async function exchangeCodeForTokens(
     redirect_uri: pending.redirectUri,
     client_id: pending.clientId || 'aisso',
     code_verifier: pending.codeVerifier,
+
+    // Doit être identique à la valeur envoyée à /authorize (RFC 8707).
+    resource: pending.serverUrl,
   });
 
   if (pending.clientSecret) {
