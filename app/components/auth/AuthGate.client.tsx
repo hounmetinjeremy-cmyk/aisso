@@ -1,11 +1,5 @@
 import { useEffect, useState, type ReactNode } from 'react';
-import {
-  GoogleAuthProvider,
-  getRedirectResult,
-  signInWithCredential,
-  signInWithPopup,
-  signInWithRedirect,
-} from 'firebase/auth';
+import { GoogleAuthProvider, getRedirectResult, signInWithCredential, signInWithRedirect } from 'firebase/auth';
 import { Capacitor } from '@capacitor/core';
 import { FirebaseAuthentication } from '@capacitor-firebase/authentication';
 
@@ -178,39 +172,21 @@ function LoginScreen({ initialError }: { initialError?: string | null }) {
     }
   };
 
+  /*
+   * signInWithPopup ne remonte pas toujours une erreur exploitable quand le
+   * navigateur bloque la pop-up silencieusement (pas de rejet de promesse,
+   * juste un blocage natif type Chrome mobile) — le bouton restait alors
+   * bloqué indéfiniment sur "Connexion...". On passe donc directement par
+   * une redirection plein écran, qui ne dépend d'aucune autorisation
+   * pop-up : la page se recharge, getRedirectResult() reprend la main au
+   * retour (voir useEffect ci-dessus et le timeout de 8s dans AuthGate).
+   */
   const signInWithFirebaseFallback = async () => {
     try {
-      await signInWithPopup(auth, googleProvider);
-      setBusy(false);
+      await signInWithRedirect(auth, googleProvider);
     } catch (err) {
-      const code = (err as { code?: string })?.code ?? '';
-
-      /*
-       * Sur mobile, la popup s'ouvre et affiche bien l'écran Google, mais la fenêtre
-       * perd souvent sa référence vers l'onglet d'origine (window.opener) au retour —
-       * Firebase interprète alors ça à tort comme une fermeture/annulation par
-       * l'utilisateur (auth/popup-closed-by-user, auth/cancelled-popup-request), ou le
-       * navigateur bloque carrément la popup (auth/popup-blocked). Dans ces cas-là, on
-       * retombe sur une redirection plein écran plutôt que d'afficher une fausse erreur
-       * d'annulation : la page va se recharger, getRedirectResult() reprend la main au
-       * retour (voir useEffect ci-dessus et le timeout de 8s dans AuthGate).
-       */
-      if (
-        code === 'auth/popup-closed-by-user' ||
-        code === 'auth/cancelled-popup-request' ||
-        code === 'auth/popup-blocked'
-      ) {
-        try {
-          await signInWithRedirect(auth, googleProvider);
-          return;
-        } catch (redirectErr) {
-          setError(messageFrom(redirectErr));
-          setBusy(false);
-        }
-      } else {
-        setError(messageFrom(err));
-        setBusy(false);
-      }
+      setError(messageFrom(err));
+      setBusy(false);
     }
   };
 
