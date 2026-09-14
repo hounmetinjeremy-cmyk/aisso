@@ -12,6 +12,7 @@ import { discussPrompt } from '~/lib/common/prompts/discuss-prompt';
 import type { DesignScheme } from '~/types/design-scheme';
 import { sanitizeToolsForGemini } from './sanitize-tools-for-gemini';
 import { sanitizeToolResultsForGemini } from './sanitize-tool-results-for-gemini';
+import { sanitizeThoughtSignaturesForGemini } from './sanitize-thought-signatures-for-gemini';
 
 export type Messages = Message[];
 
@@ -51,7 +52,7 @@ function getCompletionTokenLimit(modelDetails: any): number {
 }
 
 function sanitizeText(text: string): string {
-  let sanitized = text.replace(/<div class=\\"__boltThought__\\">.*?<\/div>/s, '');
+  let sanitized = text.replace(/<div class=\"__boltThought__\">.*?<\/div>/s, '');
   sanitized = sanitized.replace(/<think>.*?<\/think>/s, '');
   sanitized = sanitized.replace(/<boltAction type="file" filePath="package-lock\.json">[\s\S]*?<\/boltAction>/g, '');
 
@@ -156,7 +157,7 @@ export async function streamText(props: {
   const mcpToolsAvailable = Object.keys(options?.tools || {}).length > 0;
 
   let systemPrompt =
-    PromptLibrary.getPropmtFromLibrary(promptId || 'default', {
+    PromptLibrary.getPromptFromLibrary(promptId || 'default', {
       cwd: WORK_DIR,
       allowedHtmlElements: allowedHTMLElements,
       modificationTagName: MODIFICATIONS_TAG_NAME,
@@ -179,7 +180,7 @@ export async function streamText(props: {
 
     systemPrompt = `${systemPrompt}
 
-    Below is the artifact containing the context loaded into context buffer for you to have knowledge of and might need changes to fullfill current user request.
+    Below is the artifact containing the context loaded into context buffer for you to have knowledge of and might need changes to fulfill current user request.
     CONTEXT BUFFER:
     ---
     ${codeContext}
@@ -304,6 +305,10 @@ export async function streamText(props: {
    */
   if (currentProvider === 'Google') {
     coreMessages = sanitizeToolResultsForGemini(coreMessages);
+    // Gemini 2.5/3 exige thought_signature sur chaque functionCall rejoué.
+    // L'historique client (et @ai-sdk/google 0.0.52) les perd souvent → 400.
+    // Sentinel officiel Google si signature absente.
+    coreMessages = sanitizeThoughtSignaturesForGemini(coreMessages);
   }
 
   const streamParams = {
