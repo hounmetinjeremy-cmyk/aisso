@@ -1,5 +1,6 @@
 import { create } from 'zustand';
 import type { MCPConfig, MCPServerTools } from '~/lib/services/mcpService';
+import { getFreshAccessToken, loadTokenMeta } from '~/lib/services/mcpOAuth';
 
 const MCP_SETTINGS_KEY = 'mcp_settings';
 const isBrowser = typeof window !== 'undefined';
@@ -47,8 +48,14 @@ export const useMCPStore = create<Store & Actions>((set, get) => ({
       if (savedConfig) {
         try {
           const settings = JSON.parse(savedConfig) as MCPSettings;
-          const serverTools = await updateServerConfig(settings.mcpConfig);
-          set(() => ({ settings, serverTools }));
+          const { serverTools, config } = await updateServerConfig(settings.mcpConfig);
+          const finalSettings = { ...settings, mcpConfig: config };
+
+          if (config !== settings.mcpConfig) {
+            localStorage.setItem(MCP_SETTINGS_KEY, JSON.stringify(finalSettings));
+          }
+
+          set(() => ({ settings: finalSettings, serverTools }));
         } catch (error) {
           console.error('Error parsing saved mcp config:', error);
           set(() => ({
@@ -70,13 +77,14 @@ export const useMCPStore = create<Store & Actions>((set, get) => ({
     try {
       set(() => ({ isUpdatingConfig: true }));
 
-      const serverTools = await updateServerConfig(newSettings.mcpConfig);
+      const { serverTools, config } = await updateServerConfig(newSettings.mcpConfig);
+      const finalSettings = { ...newSettings, mcpConfig: config };
 
       if (isBrowser) {
-        localStorage.setItem(MCP_SETTINGS_KEY, JSON.stringify(newSettings));
+        localStorage.setItem(MCP_SETTINGS_KEY, JSON.stringify(finalSettings));
       }
 
-      set(() => ({ settings: newSettings, serverTools }));
+      set(() => ({ settings: finalSettings, serverTools }));
     } catch (error) {
       throw error;
     } finally {
@@ -84,21 +92,18 @@ export const useMCPStore = create<Store & Actions>((set, get) => ({
     }
   },
   checkServersAvailabilities: async () => {
-    const response = await fetch('/api/mcp-check', {
-      method: 'GET',
-    });
+    const { serverTools, config } = await updateServerConfig(get().settings.mcpConfig);
+    const finalSettings = { ...get().settings, mcpConfig: config };
 
-    if (!response.ok) {
-      throw new Error(`Server responded with ${response.status}: ${response.statusText}`);
+    if (isBrowser) {
+      localStorage.setItem(MCP_SETTINGS_KEY, JSON.stringify(finalSettings));
     }
 
-    const serverTools = (await response.json()) as MCPServerTools;
-
-    set(() => ({ serverTools }));
+    set(() => ({ settings: finalSettings, serverTools }));
   },
 }));
 
-async function updateServerConfig(config: MCPConfig) {
+async function pushConfig(config: MCPConfig): Promise<MCPServerTools> {
   const response = await fetch('/api/mcp-update-config', {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
@@ -109,7 +114,74 @@ async function updateServerConfig(config: MCPConfig) {
     throw new Error(`Server responded with ${response.status}: ${response.statusText}`);
   }
 
-  const data = (await response.json()) as MCPServerTools;
+  return (await response.json()) as MCPServerTools;
+}
 
-  return data;
+function looksLikeAuthError(error?: string): boolean {
+  if (!error) {
+    return false;
+  }
+
+  const lower = error.toLowerCase();
+
+  return (
+    lower.includes('invalid_token') ||
+    lower.includes('unauthorized') ||
+    lower.includes('401') ||
+    lower.includes('access token') ||
+    lower.includes('jeton')
+  );
+}
+
+/**
+ * Pousse la config au serveur. Si un serveur OAuth revient "unavailable"
+ * avec une erreur qui ressemble à un jeton invalide/expiré et qu'on a un
+ * refresh_token stocké pour lui, tente un rafraîchissement silencieux puis
+ * repousse la config une seule fois (pas de boucle si le refresh_token est
+ * lui-même révoqué — dans ce cas l'UI proposera une reconnexion manuelle).
+ */
+async function updateServerConfig(config: MCPConfig): Promise<{ serverTools: MCPServerTools; config: MCPConfig }> {
+  const serverTools = await pushConfig(config);
+
+  const serversToRetry = Object.entries(serverTools).filter(
+    ([serverName, server]) =>
+      server.status === 'unavailable' &&
+      looksLikeAuthError((server as { error?: string }).error) &&
+      Boolean(loadTokenMeta(serverName)?.refreshToken),
+  );
+
+  if (serversToRetry.length === 0) {
+    return { serverTools, config };
+  }
+
+  const updatedServers = { ...config.mcpServers };
+  let anyRefreshed = false;
+
+  await Promise.all(
+    serversToRetry.map(async ([serverName]) => {
+      try {
+        const newToken = await getFreshAccessToken(serverName, { force: true });
+
+        if (newToken) {
+          const serverConfig = updatedServers[serverName] as any;
+          updatedServers[serverName] = {
+            ...serverConfig,
+            headers: { ...serverConfig.headers, Authorization: `Bearer ${newToken}` },
+          };
+          anyRefreshed = true;
+        }
+      } catch (e) {
+        console.warn(`[mcp] token refresh failed for "${serverName}"`, e);
+      }
+    }),
+  );
+
+  if (!anyRefreshed) {
+    return { serverTools, config };
+  }
+
+  const refreshedConfig: MCPConfig = { ...config, mcpServers: updatedServers };
+  const refreshedServerTools = await pushConfig(refreshedConfig);
+
+  return { serverTools: refreshedServerTools, config: refreshedConfig };
 }

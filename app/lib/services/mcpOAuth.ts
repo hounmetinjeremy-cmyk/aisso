@@ -9,7 +9,11 @@
  */
 
 const MCP_OAUTH_STATE_KEY = 'mcp_oauth_pending';
+const MCP_OAUTH_TOKENS_KEY = 'mcp_oauth_tokens';
 const FETCH_TIMEOUT_MS = 8000;
+
+/** Rafraîchir un peu avant l'expiration réelle pour éviter les 401 en bordure. */
+const REFRESH_SKEW_MS = 60_000;
 
 export type McpOAuthPending = {
   serverName: string;
@@ -117,6 +121,134 @@ export function clearPendingOAuth(): void {
   }
 
   localStorage.removeItem(MCP_OAUTH_STATE_KEY);
+}
+
+/**
+ * Métadonnées nécessaires pour rafraîchir un access_token expiré sans repasser
+ * par un login complet — stockées séparément de MCPServerConfig (qui ne
+ * garde que le header Authorization envoyé au serveur MCP).
+ */
+export type McpOAuthTokenMeta = {
+  refreshToken: string;
+  tokenEndpoint: string;
+  clientId: string;
+  clientSecret?: string;
+
+  /** epoch ms — undefined si le serveur n'a pas renvoyé expires_in */
+  expiresAt?: number;
+};
+
+function loadAllTokenMeta(): Record<string, McpOAuthTokenMeta> {
+  if (typeof localStorage === 'undefined') {
+    return {};
+  }
+
+  try {
+    const raw = localStorage.getItem(MCP_OAUTH_TOKENS_KEY);
+    return raw ? (JSON.parse(raw) as Record<string, McpOAuthTokenMeta>) : {};
+  } catch {
+    return {};
+  }
+}
+
+function saveAllTokenMeta(all: Record<string, McpOAuthTokenMeta>): void {
+  if (typeof localStorage === 'undefined') {
+    return;
+  }
+
+  localStorage.setItem(MCP_OAUTH_TOKENS_KEY, JSON.stringify(all));
+}
+
+export function saveTokenMeta(serverName: string, meta: McpOAuthTokenMeta): void {
+  const all = loadAllTokenMeta();
+  all[serverName] = meta;
+  saveAllTokenMeta(all);
+}
+
+export function loadTokenMeta(serverName: string): McpOAuthTokenMeta | null {
+  return loadAllTokenMeta()[serverName] ?? null;
+}
+
+export function clearTokenMeta(serverName: string): void {
+  const all = loadAllTokenMeta();
+  delete all[serverName];
+  saveAllTokenMeta(all);
+}
+
+/**
+ * Échange un refresh_token contre un nouvel access_token (RFC 6749 §6).
+ */
+async function refreshAccessToken(meta: McpOAuthTokenMeta): Promise<{
+  access_token: string;
+  refresh_token?: string;
+  expires_in?: number;
+}> {
+  const body = new URLSearchParams({
+    grant_type: 'refresh_token',
+    refresh_token: meta.refreshToken,
+    client_id: meta.clientId,
+  });
+
+  if (meta.clientSecret) {
+    body.set('client_secret', meta.clientSecret);
+  }
+
+  const res = await fetchWithTimeout(meta.tokenEndpoint, {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/x-www-form-urlencoded',
+      Accept: 'application/json',
+    },
+    body,
+  });
+
+  if (!res.ok) {
+    const text = await res.text().catch(() => '');
+    throw new Error(`Refresh token failed (${res.status}): ${text}`);
+  }
+
+  return (await res.json()) as { access_token: string; refresh_token?: string; expires_in?: number };
+}
+
+/**
+ * Rafraîchit l'access_token d'un serveur si on a un refresh_token stocké.
+ *
+ * - `force: false` (défaut) : rafraîchit seulement si `expiresAt` est connu
+ *   et proche/dépassé — check bon marché fait à chaque chargement de page.
+ * - `force: true` : rafraîchit toujours, même si `expiresAt` est inconnu ou
+ *   pas encore atteint — utilisé en réaction à un 401/"invalid_token" reçu
+ *   du serveur MCP (l'horloge du serveur d'auth ne ment jamais, la nôtre si).
+ *
+ * Renvoie null si rien à rafraîchir (pas de métadonnées, pas de
+ * refresh_token, ou pas encore dû en mode non forcé) — l'Authorization
+ * existant doit alors être conservé tel quel. Propage l'erreur si le
+ * refresh échoue (refresh_token révoqué/expiré) : l'appelant doit alors
+ * proposer une reconnexion complète à l'utilisateur.
+ */
+export async function getFreshAccessToken(serverName: string, options?: { force?: boolean }): Promise<string | null> {
+  const meta = loadTokenMeta(serverName);
+
+  if (!meta?.refreshToken) {
+    return null;
+  }
+
+  if (!options?.force) {
+    const isExpiredOrUnknown = meta.expiresAt === undefined || Date.now() >= meta.expiresAt - REFRESH_SKEW_MS;
+
+    if (!isExpiredOrUnknown) {
+      return null;
+    }
+  }
+
+  const tokens = await refreshAccessToken(meta);
+
+  saveTokenMeta(serverName, {
+    ...meta,
+    refreshToken: tokens.refresh_token || meta.refreshToken,
+    expiresAt: tokens.expires_in ? Date.now() + tokens.expires_in * 1000 : undefined,
+  });
+
+  return tokens.access_token;
 }
 
 /**

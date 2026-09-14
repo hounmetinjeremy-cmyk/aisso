@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react';
 import { useSearchParams, Link, useNavigate } from '@remix-run/react';
-import { loadPendingOAuth, clearPendingOAuth, exchangeCodeForTokens } from '~/lib/services/mcpOAuth';
+import { loadPendingOAuth, clearPendingOAuth, exchangeCodeForTokens, saveTokenMeta } from '~/lib/services/mcpOAuth';
 import { useMCPStore } from '~/lib/stores/mcp';
 import type { MCPConfig } from '~/lib/services/mcpService';
 
@@ -77,6 +77,16 @@ export default function McpOauthCallback() {
 
         if (!tokens.access_token) {
           throw new Error('Aucun access_token reçu');
+        }
+
+        if (tokens.refresh_token && pending.tokenEndpoint) {
+          saveTokenMeta(pending.serverName, {
+            refreshToken: tokens.refresh_token,
+            tokenEndpoint: pending.tokenEndpoint,
+            clientId: pending.clientId || 'aisso',
+            clientSecret: pending.clientSecret,
+            expiresAt: tokens.expires_in ? Date.now() + tokens.expires_in * 1000 : undefined,
+          });
         }
 
         const existing = settings.mcpConfig.mcpServers[pending.serverName];

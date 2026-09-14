@@ -4,7 +4,7 @@ import type { MCPConfig } from '~/lib/services/mcpService';
 import { toast } from 'react-toastify';
 import { useMCPStore } from '~/lib/stores/mcp';
 import McpServerList from '~/components/@settings/tabs/mcp/McpServerList';
-import { startMcpOAuthFlow } from '~/lib/services/mcpOAuth';
+import { startMcpOAuthFlow, clearTokenMeta } from '~/lib/services/mcpOAuth';
 
 export default function McpTab() {
   const settings = useMCPStore((state) => state.settings);
@@ -112,6 +112,7 @@ export default function McpTab() {
         maxLLMSteps,
       });
 
+      clearTokenMeta(serverName);
       toast.success(`Connecteur "${serverName}" supprimé`);
 
       if (expandedServer === serverName) {
