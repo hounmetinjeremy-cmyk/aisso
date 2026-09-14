@@ -21,6 +21,15 @@ export const Artifact = memo(({ artifactId }: ArtifactProps) => {
   const artifacts = useStore(workbenchStore.artifacts);
   const artifact = artifacts[artifactId];
 
+  /*
+   * Mode MCP / sans WebContainer : on n'affiche plus la carte
+   * « Creating Project… / Creating initial files / Click to open Workbench ».
+   * Les artefacts « bundled » servent uniquement au bootstrap WebContainer.
+   */
+  if (!artifact || artifact.type === 'bundled') {
+    return null;
+  }
+
   const actions = useStore(
     computed(artifact.runner.actions, (actions) => {
       // Filter out Supabase actions except for migrations
@@ -52,12 +61,12 @@ export const Artifact = memo(({ artifactId }: ArtifactProps) => {
     artifact?.type === 'bundled'
       ? allActionFinished
         ? artifact.id === 'restored-project-setup'
-          ? 'Project Restored' // Title when restore is complete
-          : 'Project Created' // Title when initial creation is complete
+          ? 'Project Restored'
+          : 'Project Created'
         : artifact.id === 'restored-project-setup'
-          ? 'Restoring Project...' // Title during restore
-          : 'Creating Project...' // Title during initial creation
-      : artifact?.title; // Fallback to original title for non-bundled or if artifact is missing
+          ? 'Restoring Project...'
+          : 'Creating Project...'
+      : artifact?.title;
 
   return (
     <>
@@ -71,35 +80,24 @@ export const Artifact = memo(({ artifactId }: ArtifactProps) => {
             }}
           >
             <div className="px-5 p-3.5 w-full text-left">
-              <div className="w-full text-bolt-elements-textPrimary font-medium leading-5 text-sm">
-                {/* Use the dynamic title here */}
-                {dynamicTitle}
-              </div>
+              <div className="w-full text-bolt-elements-textPrimary font-medium leading-5 text-sm">{dynamicTitle}</div>
               <div className="w-full w-full text-bolt-elements-textSecondary text-xs mt-0.5">
                 Click to open Workbench
               </div>
             </div>
           </button>
-          {artifact.type !== 'bundled' && <div className="bg-bolt-elements-artifacts-borderColor w-[1px]" />}
-          <AnimatePresence>
-            {actions.length && artifact.type !== 'bundled' && (
-              <motion.button
-                initial={{ width: 0 }}
-                animate={{ width: 'auto' }}
-                exit={{ width: 0 }}
-                transition={{ duration: 0.15, ease: cubicEasingFn }}
-                className="bg-bolt-elements-artifacts-background hover:bg-bolt-elements-artifacts-backgroundHover"
-                onClick={toggleActions}
-              >
-                <div className="p-4">
-                  <div className={showActions ? 'i-ph:caret-up-bold' : 'i-ph:caret-down-bold'}></div>
-                </div>
-              </motion.button>
-            )}
-          </AnimatePresence>
+          <div className="bg-bolt-elements-artifacts-borderColor w-[1px]" />
+          <button
+            className="bg-bolt-elements-artifacts-background hover:bg-bolt-elements-artifacts-backgroundHover"
+            onClick={toggleActions}
+          >
+            <div className="p-4">
+              {showActions ? <div className="i-ph:caret-up-bold"></div> : <div className="i-ph:caret-down-bold"></div>}
+            </div>
+          </button>
         </div>
         {artifact.type === 'bundled' && (
-          <div className="flex items-center gap-1.5 p-5 bg-bolt-elements-actions-background border-t border-bolt-elements-artifacts-borderColor">
+          <div className="flex items-center gap-1.5 p-5 bg-bolt-elements-actions-background">
             <div className={classNames('text-lg', getIconColor(allActionFinished ? 'complete' : 'running'))}>
               {allActionFinished ? (
                 <div className="i-ph:check"></div>
@@ -108,7 +106,6 @@ export const Artifact = memo(({ artifactId }: ArtifactProps) => {
               )}
             </div>
             <div className="text-bolt-elements-textPrimary font-medium leading-5 text-sm">
-              {/* This status text remains the same */}
               {allActionFinished
                 ? artifact.id === 'restored-project-setup'
                   ? 'Restore files from snapshot'
@@ -161,7 +158,7 @@ const ActionList = memo(({ actions }: ActionListProps) => {
     <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }} transition={{ duration: 0.15 }}>
       <ul className="list-none space-y-2.5">
         {actions.map((action, index) => {
-          const { status, type } = action;
+          const { status, type, content, filePath } = action as any;
 
           return (
             <motion.li
@@ -175,35 +172,42 @@ const ActionList = memo(({ actions }: ActionListProps) => {
               }}
             >
               <div className="flex items-center gap-1.5 text-sm">
-                <div className={classNames('text-lg', getIconColor(action.status))}>
+                <div className={classNames('text-lg', getIconColor(status))}>
                   {status === 'running' ? (
                     <div className="i-svg-spinners:90-ring-with-bg"></div>
                   ) : status === 'pending' ? (
-                    <div className="i-ph:circle-duotone"></div>
+                    <div className="i-ph:circle-dashed"></div>
                   ) : status === 'complete' ? (
                     <div className="i-ph:check"></div>
                   ) : status === 'failed' || status === 'aborted' ? (
                     <div className="i-ph:x"></div>
                   ) : null}
                 </div>
-                {type === 'file' ? (
-                  <button
-                    type="button"
-                    className="flex-1 flex items-center gap-1.5 min-w-0 text-left rounded-md -mx-1 px-1 py-0.5 hover:bg-bolt-elements-background-depth-2"
-                    onClick={() => openArtifactInWorkbench(action.filePath)}
-                  >
-                    <code className="bg-bolt-elements-artifacts-inlineCode-background text-bolt-elements-artifacts-inlineCode-text px-1.5 py-1 rounded-md text-bolt-elements-item-contentAccent truncate">
-                      {action.filePath}
-                    </code>
-                    {status === 'complete' ? (
-                      <DiffStats linesAdded={action.linesAdded} linesRemoved={action.linesRemoved} />
-                    ) : (
-                      <ActionTimer status={status} startedAt={action.startedAt} completedAt={action.completedAt} />
-                    )}
-                    <div className="i-ph:caret-right-bold text-bolt-elements-textTertiary shrink-0"></div>
-                  </button>
-                ) : null}
+                <div className="text-bolt-elements-textPrimary">
+                  {type === 'file' ? (
+                    <span>
+                      Create{' '}
+                      <code
+                        className="bg-bolt-elements-artifacts-inlineCode-background text-bolt-elements-artifacts-inlineCode-text px-1.5 py-0.5 rounded-md"
+                        onClick={() => openArtifactInWorkbench(filePath)}
+                      >
+                        {filePath}
+                      </code>
+                    </span>
+                  ) : type === 'shell' ? (
+                    <div className="flex items-center w-full min-h-[28px]">
+                      <span className="flex-1">Run command</span>
+                    </div>
+                  ) : type === 'start' ? (
+                    <div className="flex items-center w-full min-h-[28px]">
+                      <span className="flex-1">Start application</span>
+                    </div>
+                  ) : null}
+                </div>
               </div>
+              {type === 'shell' && content && (
+                <div className="ml-6 mt-1 text-xs text-bolt-elements-textSecondary font-mono">{content}</div>
+              )}
             </motion.li>
           );
         })}
@@ -212,57 +216,7 @@ const ActionList = memo(({ actions }: ActionListProps) => {
   );
 });
 
-/**
- * Compteur de secondes affiche a cote de chaque fichier en cours de
- * traitement — comme la trace d'outils de Claude Code, pour que le chat
- * montre en direct que l'IA travaille dessus (et depuis combien de temps),
- * plutot que de rester silencieux jusqu'a la fin de l'action.
- */
-const ActionTimer = memo(
-  ({ status, startedAt, completedAt }: { status: ActionState['status']; startedAt: number; completedAt?: number }) => {
-    const [now, setNow] = useState(() => Date.now());
-
-    useEffect(() => {
-      if (completedAt || status === 'pending') {
-        return undefined;
-      }
-
-      const interval = setInterval(() => setNow(Date.now()), 1000);
-
-      return () => clearInterval(interval);
-    }, [completedAt, status]);
-
-    if (status === 'pending') {
-      return null;
-    }
-
-    const elapsedSeconds = Math.max(0, Math.round(((completedAt ?? now) - startedAt) / 1000));
-
-    return (
-      <span className="ml-auto shrink-0 text-xs text-bolt-elements-textTertiary tabular-nums">{elapsedSeconds}s</span>
-    );
-  },
-);
-
-/**
- * Statistiques "+X -Y" une fois l'ecriture terminee — meme style compact que
- * la trace d'outils de Claude Code (nombre de lignes ajoutees/supprimees
- * plutot qu'un simple "Create").
- */
-const DiffStats = memo(({ linesAdded, linesRemoved }: { linesAdded?: number; linesRemoved?: number }) => {
-  if (!linesAdded && !linesRemoved) {
-    return null;
-  }
-
-  return (
-    <span className="ml-auto shrink-0 text-xs tabular-nums flex items-center gap-1.5">
-      {!!linesAdded && <span className="text-bolt-elements-icon-success">+{linesAdded}</span>}
-      {!!linesRemoved && <span className="text-bolt-elements-icon-error">-{linesRemoved}</span>}
-    </span>
-  );
-});
-
-function getIconColor(status: ActionState['status']) {
+function getIconColor(status: ActionState['status'] | 'complete' | 'running') {
   switch (status) {
     case 'pending': {
       return 'text-bolt-elements-textTertiary';
@@ -280,7 +234,7 @@ function getIconColor(status: ActionState['status']) {
       return 'text-bolt-elements-icon-error';
     }
     default: {
-      return undefined;
+      return 'text-bolt-elements-textTertiary';
     }
   }
 }
