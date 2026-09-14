@@ -1,14 +1,10 @@
 import { useEffect, useState } from 'react';
 import { useSearchParams, Link, useNavigate } from '@remix-run/react';
-import {
-  loadPendingOAuth,
-  clearPendingOAuth,
-  exchangeCodeForTokens,
-} from '~/lib/services/mcpOAuth';
+import { loadPendingOAuth, clearPendingOAuth, exchangeCodeForTokens } from '~/lib/services/mcpOAuth';
 import { useMCPStore } from '~/lib/stores/mcp';
 import type { MCPConfig } from '~/lib/services/mcpService';
 
-export default function McpOAuthCallback() {
+export default function McpOauthCallback() {
   const [searchParams] = useSearchParams();
   const navigate = useNavigate();
   const [status, setStatus] = useState<'loading' | 'success' | 'error'>('loading');
@@ -39,6 +35,7 @@ export default function McpOAuthCallback() {
         setStatus('error');
         setMessage(errorDescription || error || 'Autorisation refusée');
         clearPendingOAuth();
+
         return;
       }
 
@@ -46,6 +43,7 @@ export default function McpOAuthCallback() {
         setStatus('error');
         setMessage('Paramètres OAuth manquants (code ou state).');
         clearPendingOAuth();
+
         return;
       }
 
@@ -54,6 +52,7 @@ export default function McpOAuthCallback() {
       if (!pending) {
         setStatus('error');
         setMessage('Session OAuth expirée. Recommencez depuis les paramètres MCP.');
+
         return;
       }
 
@@ -61,6 +60,7 @@ export default function McpOAuthCallback() {
         setStatus('error');
         setMessage('State OAuth invalide (possible attaque CSRF).');
         clearPendingOAuth();
+
         return;
       }
 
@@ -68,6 +68,7 @@ export default function McpOAuthCallback() {
         setStatus('error');
         setMessage('Session OAuth expirée. Recommencez.');
         clearPendingOAuth();
+
         return;
       }
 

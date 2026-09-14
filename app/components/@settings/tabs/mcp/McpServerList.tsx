@@ -67,7 +67,7 @@ export default function McpServerList({
         const showConnect =
           hasUrl &&
           onConnectAccount &&
-          (!connected || needsOAuth(mcpServer.error) || !isAvailable);
+          (!connected || needsOAuth(mcpServer.status === 'unavailable' ? mcpServer.error : undefined) || !isAvailable);
 
         const toolNames = serverTools.map(([name]) => name);
         const visibleTools = toolNames.slice(0, 6);
@@ -109,9 +109,7 @@ export default function McpServerList({
                     'disabled:opacity-50 disabled:cursor-not-allowed',
                   )}
                 >
-                  {removingServer === serverName || removingServer === '__saving__'
-                    ? 'Déconnexion…'
-                    : 'Déconnecter'}
+                  {removingServer === serverName || removingServer === '__saving__' ? 'Déconnexion…' : 'Déconnecter'}
                 </button>
               )}
             </div>
@@ -150,9 +148,7 @@ export default function McpServerList({
                     ) : (
                       <div className="i-ph:github-logo w-4 h-4" />
                     )}
-                    {connectingServer === serverName
-                      ? 'Redirection vers GitHub…'
-                      : 'Connecter le compte GitHub'}
+                    {connectingServer === serverName ? 'Redirection vers GitHub…' : 'Connecter le compte GitHub'}
                   </button>
                 </div>
               )}

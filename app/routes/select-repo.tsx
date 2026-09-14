@@ -10,9 +10,11 @@ export default function SelectRepoPage() {
     // Passe le dépôt choisi à l'app principale (query params)
     const params = new URLSearchParams();
     params.set('importRepo', repoUrl);
+
     if (branch) {
       params.set('branch', branch);
     }
+
     window.location.href = `/?${params.toString()}`;
   };
 
@@ -21,9 +23,7 @@ export default function SelectRepoPage() {
       <div className="max-w-5xl mx-auto px-4 py-8 space-y-6">
         <div className="flex items-center justify-between gap-4">
           <div>
-            <h1 className="text-xl font-semibold text-bolt-elements-textPrimary">
-              Choisir un dépôt
-            </h1>
+            <h1 className="text-xl font-semibold text-bolt-elements-textPrimary">Choisir un dépôt</h1>
             <p className="text-sm text-bolt-elements-textSecondary mt-1">
               Sélectionne le dépôt GitHub à ouvrir dans Aïsso.
             </p>

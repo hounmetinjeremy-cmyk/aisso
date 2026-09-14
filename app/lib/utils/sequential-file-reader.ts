@@ -62,6 +62,7 @@ export async function readFilesOneByOne(
       await analyze(file, content, progress);
     } catch (err) {
       console.warn(`[sequential-reader] Échec lecture ${file.path}`, err);
+
       // On continue les autres fichiers
     }
 

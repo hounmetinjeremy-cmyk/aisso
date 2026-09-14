@@ -305,9 +305,12 @@ export async function streamText(props: {
    */
   if (currentProvider === 'Google') {
     coreMessages = sanitizeToolResultsForGemini(coreMessages);
-    // Gemini 2.5/3 exige thought_signature sur chaque functionCall rejoué.
-    // L'historique client (et @ai-sdk/google 0.0.52) les perd souvent → 400.
-    // Sentinel officiel Google si signature absente.
+
+    /*
+     * Gemini 2.5/3 exige thought_signature sur chaque functionCall rejoué.
+     * L'historique client (et @ai-sdk/google 0.0.52) les perd souvent → 400.
+     * Sentinel officiel Google si signature absente.
+     */
     coreMessages = sanitizeThoughtSignaturesForGemini(coreMessages);
   }
 

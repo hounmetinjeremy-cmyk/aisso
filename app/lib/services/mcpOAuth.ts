@@ -26,15 +26,18 @@ export type McpOAuthPending = {
 function base64UrlEncode(buffer: ArrayBuffer | Uint8Array): string {
   const bytes = buffer instanceof Uint8Array ? buffer : new Uint8Array(buffer);
   let binary = '';
+
   for (let i = 0; i < bytes.length; i++) {
     binary += String.fromCharCode(bytes[i]!);
   }
+
   return btoa(binary).replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/, '');
 }
 
 async function fetchWithTimeout(url: string, init?: RequestInit, timeoutMs = FETCH_TIMEOUT_MS): Promise<Response> {
   const controller = new AbortController();
   const timer = setTimeout(() => controller.abort(), timeoutMs);
+
   try {
     return await fetch(url, { ...init, signal: controller.signal });
   } finally {
@@ -45,6 +48,7 @@ async function fetchWithTimeout(url: string, init?: RequestInit, timeoutMs = FET
 export async function generatePkce(): Promise<{ codeVerifier: string; codeChallenge: string }> {
   const array = new Uint8Array(32);
   crypto.getRandomValues(array);
+
   const codeVerifier = base64UrlEncode(array);
 
   const digest = await crypto.subtle.digest('SHA-256', new TextEncoder().encode(codeVerifier));
@@ -56,6 +60,7 @@ export async function generatePkce(): Promise<{ codeVerifier: string; codeChalle
 export function generateState(): string {
   const array = new Uint8Array(16);
   crypto.getRandomValues(array);
+
   return base64UrlEncode(array);
 }
 
@@ -65,6 +70,7 @@ export function getServerOrigin(serverUrl: string): string {
     const u = new URL(serverUrl);
     let path = u.pathname.replace(/\/+$/, '');
     path = path.replace(/\/(sse|mcp)$/i, '');
+
     return `${u.origin}${path}` || u.origin;
   } catch {
     return serverUrl;
@@ -75,6 +81,7 @@ export function getRedirectUri(): string {
   if (typeof window === 'undefined') {
     return '';
   }
+
   return `${window.location.origin}/mcp-oauth/callback`;
 }
 
@@ -82,6 +89,7 @@ export function savePendingOAuth(pending: McpOAuthPending): void {
   if (typeof localStorage === 'undefined') {
     return;
   }
+
   localStorage.setItem(MCP_OAUTH_STATE_KEY, JSON.stringify(pending));
 }
 
@@ -89,11 +97,14 @@ export function loadPendingOAuth(): McpOAuthPending | null {
   if (typeof localStorage === 'undefined') {
     return null;
   }
+
   try {
     const raw = localStorage.getItem(MCP_OAUTH_STATE_KEY);
+
     if (!raw) {
       return null;
     }
+
     return JSON.parse(raw) as McpOAuthPending;
   } catch {
     return null;
@@ -104,6 +115,7 @@ export function clearPendingOAuth(): void {
   if (typeof localStorage === 'undefined') {
     return;
   }
+
   localStorage.removeItem(MCP_OAUTH_STATE_KEY);
 }
 
@@ -124,20 +136,24 @@ export async function discoverOAuthEndpoints(serverUrl: string): Promise<{
     const prmRes = await fetchWithTimeout(`${origin}/.well-known/oauth-protected-resource`, {
       headers: { Accept: 'application/json' },
     });
+
     if (prmRes.ok) {
       const prm = (await prmRes.json()) as { authorization_servers?: string[] };
       const asUrl = prm.authorization_servers?.[0];
+
       if (asUrl) {
         const asMetaRes = await fetchWithTimeout(
           `${asUrl.replace(/\/+$/, '')}/.well-known/oauth-authorization-server`,
           { headers: { Accept: 'application/json' } },
         );
+
         if (asMetaRes.ok) {
           const meta = (await asMetaRes.json()) as {
             authorization_endpoint?: string;
             token_endpoint?: string;
             registration_endpoint?: string;
           };
+
           if (meta.authorization_endpoint && meta.token_endpoint) {
             return {
               authorizationEndpoint: meta.authorization_endpoint,
@@ -157,12 +173,14 @@ export async function discoverOAuthEndpoints(serverUrl: string): Promise<{
     const asRes = await fetchWithTimeout(`${origin}/.well-known/oauth-authorization-server`, {
       headers: { Accept: 'application/json' },
     });
+
     if (asRes.ok) {
       const meta = (await asRes.json()) as {
         authorization_endpoint?: string;
         token_endpoint?: string;
         registration_endpoint?: string;
       };
+
       if (meta.authorization_endpoint && meta.token_endpoint) {
         return {
           authorizationEndpoint: meta.authorization_endpoint,
@@ -208,6 +226,7 @@ export async function registerClient(
   }
 
   const data = (await res.json()) as { client_id: string; client_secret?: string };
+
   return { clientId: data.client_id, clientSecret: data.client_secret };
 }
 
@@ -235,6 +254,7 @@ export async function startMcpOAuthFlow(serverName: string, serverUrl: string): 
     endpoints = await discoverOAuthEndpoints(serverUrl);
   } catch (e) {
     console.warn('[mcp-oauth] discovery failed, using /authorize fallback', e);
+
     const origin = getServerOrigin(serverUrl);
     endpoints = {
       authorizationEndpoint: `${origin}/authorize`,

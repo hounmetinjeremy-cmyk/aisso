@@ -13,6 +13,7 @@ const SKIP_SENTINEL = 'skip_thought_signature_validator';
 
 function hasThoughtSignature(part: any): boolean {
   const opts = part?.providerOptions ?? part?.providerMetadata;
+
   if (!opts || typeof opts !== 'object') {
     return false;
   }

@@ -181,8 +181,10 @@ export class MCPService {
     const neverInitialized = Object.keys(this._tools).length === 0;
     const hasServersConfigured = Object.keys(config?.mcpServers || {}).length > 0;
 
-    // Toujours (re)charger si aucun outil enregistré sur cet isolate — critique pour
-    // processToolInvocations après approbation client ("Yes, approved.").
+    /*
+     * Toujours (re)charger si aucun outil enregistré sur cet isolate — critique pour
+     * processToolInvocations après approbation client ("Yes, approved.").
+     */
     if (hasServersConfigured && (configChanged || neverInitialized)) {
       await this.updateConfig(config);
     }

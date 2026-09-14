@@ -75,7 +75,10 @@ export const action: ActionFunction = async ({ request, context }) => {
 
       if (insertError) {
         // L'import GitHub continue quand meme : la sauvegarde Supabase n'est qu'une trace, jamais bloquante.
-        console.warn(`[api.deploy.import] echec sauvegarde Supabase (lot ${progress.current}/${progress.total})`, insertError);
+        console.warn(
+          `[api.deploy.import] echec sauvegarde Supabase (lot ${progress.current}/${progress.total})`,
+          insertError,
+        );
       } else {
         console.log(`[api.deploy.import] Progression : ${progress.current} / ${progress.total} fichiers importés`);
       }
