@@ -90,6 +90,7 @@ export default function McpTab() {
       toast.success(`Connecteur "${name}" ajouté`);
       setNewServerName('');
       setNewServerUrl('');
+      setExpandedServer(name);
     } catch (e) {
       const msg = e instanceof Error ? e.message : "Échec de l'ajout du connecteur";
       setError(msg);
@@ -285,22 +286,9 @@ export default function McpTab() {
           onConnectAccount={handleConnectAccount}
           connectingServer={connectingServer}
           isServerConnected={isServerConnected}
+          onRemoveServer={handleRemoveServer}
+          removingServer={isSaving ? '__saving__' : null}
         />
-
-        {serverEntries.length > 0 && (
-          <div className="mt-3 flex flex-wrap gap-2">
-            {serverEntries.map(([name]) => (
-              <button
-                key={`remove-${name}`}
-                onClick={() => handleRemoveServer(name)}
-                disabled={isSaving}
-                className="text-xs px-2 py-1 rounded border border-red-300 dark:border-red-800 text-red-600 dark:text-red-400 hover:bg-red-50 dark:hover:bg-red-900/20 disabled:opacity-50"
-              >
-                Supprimer « {name} »
-              </button>
-            ))}
-          </div>
-        )}
       </section>
 
       <section aria-labelledby="advanced-heading">
@@ -311,7 +299,7 @@ export default function McpTab() {
         <div className="space-y-3">
           <div>
             <label htmlFor="max-llm-steps" className="block text-sm text-bolt-elements-textSecondary mb-1.5">
-              Nombre maximum d’appels LLM séquentiels
+              Nombre maximum d'appels LLM séquentiels
             </label>
             <input
               id="max-llm-steps"

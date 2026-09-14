@@ -8,12 +8,9 @@ type McpServerListProps = {
   checkingServers: boolean;
   onlyShowAvailableServers?: boolean;
   toggleServerExpanded: (serverName: string) => void;
-  /** Called when user wants to start OAuth for a server that needs a token */
   onConnectAccount?: (serverName: string) => void;
   connectingServer?: string | null;
-  /** Whether this server already has an Authorization header stored */
   isServerConnected?: (serverName: string) => boolean;
-  /** Remove / disconnect server */
   onRemoveServer?: (serverName: string) => void;
   removingServer?: string | null;
 };
@@ -63,14 +60,10 @@ export default function McpServerList({
         const isExpanded = expandedServer === serverName;
         const serverTools = isAvailable ? Object.entries(mcpServer.tools) : [];
         const hasUrl = mcpServer.config.type === 'sse' || mcpServer.config.type === 'streamable-http';
-        const serverUrl = hasUrl ? (mcpServer.config as any).url as string : null;
+        const serverUrl = hasUrl ? ((mcpServer.config as any).url as string) : null;
         const connected = isServerConnected?.(serverName) ?? false;
         const initial = (serverName.trim()[0] || 'M').toUpperCase();
 
-        /*
-         * Afficher « Connecter le compte GitHub » dès qu'il y a une URL HTTP
-         * et qu'aucun token n'est encore stocké (ou erreur OAuth).
-         */
         const showConnect =
           hasUrl &&
           onConnectAccount &&
@@ -85,7 +78,6 @@ export default function McpServerList({
             key={serverName}
             className="flex flex-col rounded-2xl border border-bolt-elements-borderColor bg-bolt-elements-background-depth-1 overflow-hidden"
           >
-            {/* Header type fiche connecteur */}
             <div className="flex flex-col items-center px-4 pt-6 pb-4 gap-3">
               <div className="w-16 h-16 rounded-2xl bg-bolt-elements-background-depth-3 flex items-center justify-center text-2xl font-semibold text-bolt-elements-textSecondary">
                 {initial}
@@ -109,7 +101,7 @@ export default function McpServerList({
                 <button
                   type="button"
                   onClick={() => onRemoveServer(serverName)}
-                  disabled={removingServer === serverName}
+                  disabled={removingServer === serverName || removingServer === '__saving__'}
                   className={classNames(
                     'w-full max-w-xs py-2.5 rounded-full text-sm font-medium',
                     'bg-black text-white dark:bg-white dark:text-black',
@@ -117,12 +109,13 @@ export default function McpServerList({
                     'disabled:opacity-50 disabled:cursor-not-allowed',
                   )}
                 >
-                  {removingServer === serverName ? 'Déconnexion…' : 'Déconnecter'}
+                  {removingServer === serverName || removingServer === '__saving__'
+                    ? 'Déconnexion…'
+                    : 'Déconnecter'}
                 </button>
               )}
             </div>
 
-            {/* Détails */}
             <div className="px-4 pb-3 space-y-3">
               <div>
                 <p className="text-xs font-medium text-bolt-elements-textSecondary mb-1.5">Détails</p>
@@ -136,7 +129,6 @@ export default function McpServerList({
                 </div>
               </div>
 
-              {/* Connecter compte GitHub */}
               {showConnect && (
                 <div className="rounded-xl border border-bolt-elements-borderColor bg-bolt-elements-background-depth-2 p-3 space-y-2">
                   <p className="text-xs text-bolt-elements-textSecondary">
@@ -169,7 +161,6 @@ export default function McpServerList({
                 <p className="text-xs text-red-600 dark:text-red-400">Erreur : {mcpServer.error}</p>
               )}
 
-              {/* Outils */}
               <div>
                 <button
                   type="button"
@@ -177,9 +168,7 @@ export default function McpServerList({
                   className="flex items-center justify-between w-full text-xs font-medium text-bolt-elements-textSecondary mb-1.5"
                 >
                   <span>Outils {toolNames.length > 0 ? `(${toolNames.length})` : ''}</span>
-                  <div
-                    className={`i-ph:${isExpanded ? 'caret-up' : 'caret-down'} w-3.5 h-3.5`}
-                  />
+                  <div className={`i-ph:${isExpanded ? 'caret-up' : 'caret-down'} w-3.5 h-3.5`} />
                 </button>
 
                 {toolNames.length === 0 ? (
