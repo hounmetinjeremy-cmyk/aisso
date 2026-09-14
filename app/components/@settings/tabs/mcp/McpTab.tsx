@@ -4,6 +4,7 @@ import type { MCPConfig } from '~/lib/services/mcpService';
 import { toast } from 'react-toastify';
 import { useMCPStore } from '~/lib/stores/mcp';
 import McpServerList from '~/components/@settings/tabs/mcp/McpServerList';
+import { startMcpOAuthFlow } from '~/lib/services/mcpOAuth';
 
 export default function McpTab() {
   const settings = useMCPStore((state) => state.settings);
@@ -18,6 +19,7 @@ export default function McpTab() {
   const [error, setError] = useState<string | null>(null);
   const [isCheckingServers, setIsCheckingServers] = useState(false);
   const [expandedServer, setExpandedServer] = useState<string | null>(null);
+  const [connectingServer, setConnectingServer] = useState<string | null>(null);
 
   // Simple form state
   const [newServerName, setNewServerName] = useState('');
@@ -40,6 +42,11 @@ export default function McpTab() {
 
   const serverEntries = useMemo(() => Object.entries(serverTools), [serverTools]);
 
+  const configuredServers = useMemo(
+    () => Object.entries(settings.mcpConfig.mcpServers || {}),
+    [settings.mcpConfig.mcpServers],
+  );
+
   const handleAddServer = async () => {
     const name = newServerName.trim();
     const url = newServerUrl.trim();
@@ -55,7 +62,6 @@ export default function McpTab() {
     }
 
     try {
-      // Basic URL validation
       new URL(url);
     } catch {
       setError("L'URL n'est pas valide.");
@@ -125,6 +131,28 @@ export default function McpTab() {
     }
   };
 
+  const handleConnectAccount = async (serverName: string) => {
+    const config = settings.mcpConfig.mcpServers[serverName] as any;
+
+    if (!config?.url) {
+      toast.error('Ce serveur n\'a pas d\'URL (stdio non supporté pour OAuth)');
+      return;
+    }
+
+    setConnectingServer(serverName);
+    setError(null);
+
+    try {
+      await startMcpOAuthFlow(serverName, config.url);
+      // Redirect happens inside startMcpOAuthFlow
+    } catch (e) {
+      const msg = e instanceof Error ? e.message : 'Impossible de démarrer OAuth';
+      setError(msg);
+      toast.error(msg);
+      setConnectingServer(null);
+    }
+  };
+
   const handleSaveMaxSteps = async () => {
     setIsSaving(true);
     setError(null);
@@ -163,6 +191,11 @@ export default function McpTab() {
 
   const toggleServerExpanded = (serverName: string) => {
     setExpandedServer(expandedServer === serverName ? null : serverName);
+  };
+
+  const isServerConnected = (serverName: string) => {
+    const cfg = settings.mcpConfig.mcpServers[serverName] as any;
+    return Boolean(cfg?.headers?.Authorization);
   };
 
   return (
@@ -260,19 +293,56 @@ export default function McpTab() {
           toggleServerExpanded={toggleServerExpanded}
         />
 
-        {/* Boutons de suppression rapide */}
-        {serverEntries.length > 0 && (
-          <div className="mt-3 flex flex-wrap gap-2">
-            {serverEntries.map(([name]) => (
-              <button
-                key={`remove-${name}`}
-                onClick={() => handleRemoveServer(name)}
-                disabled={isSaving}
-                className="text-xs px-2 py-1 rounded border border-red-300 dark:border-red-800 text-red-600 dark:text-red-400 hover:bg-red-50 dark:hover:bg-red-900/20 disabled:opacity-50"
-              >
-                Supprimer « {name} »
-              </button>
-            ))}
+        {/* Actions par serveur : Connecter compte + Supprimer */}
+        {configuredServers.length > 0 && (
+          <div className="mt-3 space-y-2">
+            {configuredServers.map(([name, cfg]) => {
+              const hasUrl = Boolean((cfg as any)?.url);
+              const connected = isServerConnected(name);
+
+              return (
+                <div
+                  key={`actions-${name}`}
+                  className="flex flex-wrap items-center gap-2 p-2 rounded-lg bg-bolt-elements-background-depth-1 border border-bolt-elements-borderColor"
+                >
+                  <span className="text-sm font-medium text-bolt-elements-textPrimary flex-1 min-w-0 truncate">
+                    {name}
+                  </span>
+
+                  {connected ? (
+                    <span className="text-xs px-2 py-1 rounded bg-green-100 dark:bg-green-900/30 text-green-700 dark:text-green-400">
+                      Compte connecté
+                    </span>
+                  ) : hasUrl ? (
+                    <button
+                      onClick={() => handleConnectAccount(name)}
+                      disabled={connectingServer === name}
+                      className={classNames(
+                        'text-xs px-3 py-1.5 rounded-lg flex items-center gap-1.5',
+                        'bg-bolt-elements-item-backgroundAccent text-bolt-elements-item-contentAccent',
+                        'hover:bg-bolt-elements-item-backgroundActive',
+                        'disabled:opacity-50 disabled:cursor-not-allowed',
+                      )}
+                    >
+                      {connectingServer === name ? (
+                        <div className="i-svg-spinners:90-ring-with-bg w-3 h-3 animate-spin" />
+                      ) : (
+                        <div className="i-ph:github-logo w-3 h-3" />
+                      )}
+                      {connectingServer === name ? 'Redirection…' : 'Connecter le compte'}
+                    </button>
+                  ) : null}
+
+                  <button
+                    onClick={() => handleRemoveServer(name)}
+                    disabled={isSaving}
+                    className="text-xs px-2 py-1 rounded border border-red-300 dark:border-red-800 text-red-600 dark:text-red-400 hover:bg-red-50 dark:hover:bg-red-900/20 disabled:opacity-50"
+                  >
+                    Supprimer
+                  </button>
+                </div>
+              );
+            })}
           </div>
         )}
       </section>
