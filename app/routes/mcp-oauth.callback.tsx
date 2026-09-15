@@ -130,11 +130,22 @@ export default function McpOauthCallback() {
 
         clearPendingOAuth();
         setStatus('success');
-        setMessage(`Compte connecté pour « ${pending.serverName} ». Choisis maintenant un dépôt.`);
+        setMessage(
+          `Compte connecté pour « ${pending.serverName} ». Tu peux maintenant demander à Aïsso d'explorer tes dépôts directement dans le chat.`,
+        );
 
-        // Redirection automatique vers la sélection de dépôt
+        /*
+         * NE PAS rediriger vers /select-repo : cette page dépend d'une connexion
+         * GitHub totalement différente (token personnel saisi dans Paramètres →
+         * GitHub), pas du token OAuth du serveur MCP qu'on vient d'obtenir ici —
+         * lequel n'est de toute façon pas un token GitHub réutilisable tel quel
+         * (le serveur MCP agit comme son propre serveur d'autorisation). Rediriger
+         * vers /select-repo affichait donc "Please connect to GitHub first" juste
+         * après une connexion réussie. Les dépôts se parcourent via les outils MCP
+         * dans la conversation, pas via cette page.
+         */
         setTimeout(() => {
-          navigate('/select-repo');
+          navigate('/');
         }, 1500);
       } catch (e) {
         console.error('[mcp-oauth] callback error', e);
@@ -162,12 +173,12 @@ export default function McpOauthCallback() {
             <div className="i-ph:check-circle w-12 h-12 mx-auto text-green-500" />
             <h1 className="text-lg font-semibold text-bolt-elements-textPrimary">Connexion réussie</h1>
             <p className="text-sm text-bolt-elements-textSecondary">{message}</p>
-            <p className="text-xs text-bolt-elements-textTertiary">Redirection vers le choix du dépôt…</p>
+            <p className="text-xs text-bolt-elements-textTertiary">Retour au chat…</p>
             <Link
-              to="/select-repo"
+              to="/"
               className="inline-block mt-2 px-4 py-2 rounded-lg text-sm bg-bolt-elements-item-backgroundAccent text-bolt-elements-item-contentAccent"
             >
-              Choisir un dépôt maintenant
+              Retour au chat maintenant
             </Link>
           </>
         )}
