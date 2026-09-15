@@ -6,6 +6,7 @@ import { toast } from 'react-toastify';
 import { workbenchStore } from '~/lib/stores/workbench';
 import { logStore } from '~/lib/stores/logs'; // Import logStore
 import { useAuth } from '~/lib/hooks/useAuth.client';
+import { MODEL_REGEX, PROVIDER_REGEX } from '~/utils/constants';
 import {
   getMessages,
   getNextId,
@@ -262,17 +263,36 @@ ${value.content}
 
       let _urlId = urlId;
 
-      if (!urlId && firstArtifact?.id) {
-        const urlId = await getUrlId(db, firstArtifact.id);
-        _urlId = urlId;
-        navigateChat(urlId);
-        setUrlId(urlId);
+      /*
+       * urlId/description ne venaient que du premier <boltArtifact> — une
+       * conversation qui n'écrit jamais de fichier (mode discuss, question
+       * simple) n'en obtenait donc jamais et restait invisible dans la
+       * sidebar (filtrée sur item.urlId && item.description). On retombe
+       * maintenant sur le premier message utilisateur comme source.
+       */
+      if (!_urlId) {
+        const firstUserMessage = messages.find((m) => m.role === 'user');
+        const fallbackText = firstUserMessage ? extractUserText(firstUserMessage) : '';
+        const candidate = firstArtifact?.id || deriveSlug(fallbackText) || messages[0]?.id;
+
+        if (candidate) {
+          const newUrlId = await getUrlId(db, candidate);
+          _urlId = newUrlId;
+          navigateChat(newUrlId);
+          setUrlId(newUrlId);
+        }
       }
 
       takeSnapshot(messages[messages.length - 1].id, workbenchStore.files.get(), _urlId, undefined);
 
-      if (!description.get() && firstArtifact?.title) {
-        description.set(firstArtifact?.title);
+      if (!description.get()) {
+        const firstUserMessage = messages.find((m) => m.role === 'user');
+        const derivedDescription =
+          firstArtifact?.title ?? (firstUserMessage ? deriveDescription(extractUserText(firstUserMessage)) : undefined);
+
+        if (derivedDescription) {
+          description.set(derivedDescription);
+        }
       }
 
       // Ensure chatId.get() is used here as well
@@ -281,7 +301,7 @@ ${value.content}
 
         chatId.set(nextId);
 
-        if (!urlId) {
+        if (!_urlId) {
           navigateChat(nextId);
         }
       }
@@ -300,7 +320,7 @@ ${value.content}
         db,
         finalChatId, // Use the potentially updated chatId
         [...archivedMessages, ...messages],
-        urlId,
+        _urlId,
         description.get(),
         undefined,
         chatMetadata.get(),
@@ -372,4 +392,30 @@ function navigateChat(nextId: string) {
   url.pathname = `/chat/${nextId}`;
 
   window.history.replaceState({}, '', url);
+}
+
+function extractUserText(message: UIMessage): string {
+  const textPart = message.parts?.find((part) => part.type === 'text') as { text?: string } | undefined;
+
+  return (textPart?.text ?? '').replace(MODEL_REGEX, '').replace(PROVIDER_REGEX, '').trim();
+}
+
+function deriveDescription(text: string): string | undefined {
+  const singleLine = text.replace(/\s+/g, ' ').trim();
+
+  if (!singleLine) {
+    return undefined;
+  }
+
+  return singleLine.length > 60 ? `${singleLine.slice(0, 57)}…` : singleLine;
+}
+
+function deriveSlug(text: string): string | undefined {
+  const slug = text
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, '-')
+    .replace(/^-+|-+$/g, '')
+    .slice(0, 40);
+
+  return slug || undefined;
 }
