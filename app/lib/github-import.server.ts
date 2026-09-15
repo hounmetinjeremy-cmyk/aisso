@@ -97,7 +97,7 @@ export async function listUserRepos(token: string): Promise<RepoSummary[]> {
   }));
 }
 
-async function fetchBlob(
+export async function fetchBlob(
   token: string,
   owner: string,
   repo: string,
@@ -140,6 +140,51 @@ async function fetchBlob(
      */
     return { path: entry.path, content: base64Content, isBinary: true };
   }
+}
+
+export interface RepoTreeEntry {
+  path: string;
+  sha: string;
+  size?: number;
+}
+
+export interface RepoTreeResult {
+  entries: RepoTreeEntry[];
+  skippedBySize: number;
+  truncated: boolean;
+}
+
+/**
+ * Liste uniquement les chemins/sha du dépôt (pas leur contenu) — étape 1 de
+ * l'indexation séquentielle (voir project-indexer.server.ts) : on veut la
+ * liste complète avant de commencer à ouvrir les fichiers un par un.
+ */
+export async function listRepoTreeEntries(
+  token: string,
+  params: { owner: string; repo: string; branch: string },
+): Promise<RepoTreeResult> {
+  const { owner, repo, branch } = params;
+
+  const treeRes = await fetch(`${GITHUB_API}/repos/${owner}/${repo}/git/trees/${branch}?recursive=1`, {
+    headers: githubHeaders(token),
+  });
+
+  if (!treeRes.ok) {
+    throw new Error(`Impossible de lire le dépôt ${owner}/${repo} (HTTP ${treeRes.status}).`);
+  }
+
+  const treeData = await treeRes.json<{
+    truncated: boolean;
+    tree: Array<{ path: string; type: string; sha: string; size?: number }>;
+  }>();
+
+  const blobEntries = treeData.tree.filter((entry) => entry.type === 'blob' && (entry.size ?? 0) <= MAX_FILE_BYTES);
+
+  return {
+    entries: blobEntries.map((entry) => ({ path: entry.path, sha: entry.sha, size: entry.size })),
+    skippedBySize: treeData.tree.length - blobEntries.length,
+    truncated: treeData.truncated,
+  };
 }
 
 export async function importRepoFiles(
