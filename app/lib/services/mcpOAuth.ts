@@ -91,6 +91,39 @@ export function generateState(): string {
   return base64UrlEncode(array);
 }
 
+const FALLBACK_CLIENT_ID_KEY = 'mcp_oauth_fallback_client_id';
+
+/**
+ * Identifiant de secours utilisé quand l'enregistrement dynamique (DCR)
+ * échoue. AVANT : une chaîne fixe ("aisso") — donc si DCR échoue (ce qui a
+ * l'air d'être systématique avec certains serveurs distants), TOUTES les
+ * installations d'Aïsso, partout, envoient exactement le même client_id.
+ * Un serveur OAuth qui mémorise "ce client_id a déjà été autorisé par
+ * GitHub" (comportement courant du gabarit Cloudflare workers-oauth-
+ * provider) saute alors le véritable écran GitHub pour tout le monde dès
+ * qu'UNE SEULE installation a été approuvée une fois — expliquant un
+ * comportement identique sur plusieurs navigateurs/appareils différents.
+ * Un identifiant aléatoire généré une fois et conservé dans localStorage
+ * donne à chaque installation sa propre identité, distincte de toutes les
+ * autres.
+ */
+function getFallbackClientId(): string {
+  if (typeof localStorage === 'undefined') {
+    return `aisso-${generateState()}`;
+  }
+
+  const existing = localStorage.getItem(FALLBACK_CLIENT_ID_KEY);
+
+  if (existing) {
+    return existing;
+  }
+
+  const fresh = `aisso-${generateState()}`;
+  localStorage.setItem(FALLBACK_CLIENT_ID_KEY, fresh);
+
+  return fresh;
+}
+
 /** Normalize server base URL (strip /sse or /mcp suffix). */
 export function getServerOrigin(serverUrl: string): string {
   try {
@@ -372,11 +405,21 @@ export async function registerClient(
   registrationEndpoint: string,
   redirectUri: string,
 ): Promise<{ clientId: string; clientSecret?: string }> {
+  /*
+   * Un nom fixe ("Aïsso") pour toutes les installations risque qu'un
+   * serveur DCR qui déduplique par client_name (plutôt que d'émettre un
+   * client_id vraiment neuf à chaque appel, comme le permet la RFC 7591
+   * sans l'imposer) renvoie le MÊME client_id à tout le monde — même
+   * symptôme que le repli codé en dur corrigé plus haut. Un suffixe propre
+   * à cette installation évite la collision, même si DCR "réussit".
+   */
   const res = await fetchWithTimeout(registrationEndpoint, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json', Accept: 'application/json' },
     body: JSON.stringify({
-      client_name: 'Aïsso',
+      client_name: `Aïsso (${getFallbackClientId()
+        .replace(/^aisso-/, '')
+        .slice(0, 8)})`,
       redirect_uris: [redirectUri],
       grant_types: ['authorization_code', 'refresh_token'],
       response_types: ['code'],
@@ -428,7 +471,7 @@ export async function startMcpOAuthFlow(serverName: string, serverUrl: string): 
     };
   }
 
-  let clientId = 'aisso';
+  let clientId = getFallbackClientId();
   let clientSecret: string | undefined;
 
   // DCR is optional — never block redirect more than timeout
@@ -438,7 +481,7 @@ export async function startMcpOAuthFlow(serverName: string, serverUrl: string): 
       clientId = reg.clientId;
       clientSecret = reg.clientSecret;
     } catch (e) {
-      console.warn('[mcp-oauth] DCR failed, using public client id "aisso"', e);
+      console.warn('[mcp-oauth] DCR failed, using per-install fallback client id', e);
     }
   }
 
@@ -503,7 +546,7 @@ export async function exchangeCodeForTokens(
     grant_type: 'authorization_code',
     code,
     redirect_uri: pending.redirectUri,
-    client_id: pending.clientId || 'aisso',
+    client_id: pending.clientId || getFallbackClientId(),
     code_verifier: pending.codeVerifier,
 
     // Doit être identique à la valeur envoyée à /authorize (RFC 8707).
