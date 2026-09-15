@@ -1,4 +1,4 @@
-import type { Message } from 'ai';
+import type { UIMessage } from 'ai';
 import { generateId } from './fileUtils';
 
 export interface ProjectCommands {
@@ -69,7 +69,7 @@ export async function detectProjectCommands(files: FileContent[]): Promise<Proje
  * — sinon l'historique laisse croire au modèle qu'il a déjà utilisé un
  * terminal, et il continue d'essayer sur les tours suivants.
  */
-export function createCommandsMessage(commands: ProjectCommands): Message | null {
+export function createCommandsMessage(commands: ProjectCommands): UIMessage | null {
   if (!commands.setupCommand && !commands.startCommand) {
     return null;
   }
@@ -77,10 +77,14 @@ export function createCommandsMessage(commands: ProjectCommands): Message | null
   const steps = [commands.setupCommand, commands.startCommand].filter(Boolean).map((cmd) => `- \`${cmd}\``);
 
   return {
-    role: 'assistant',
-    content: `${commands.followupMessage ? `${commands.followupMessage}\n\n` : ''}Une fois les fichiers récupérés, lance ceci depuis ton terminal local pour démarrer le projet :\n${steps.join('\n')}`,
     id: generateId(),
-    createdAt: new Date(),
+    role: 'assistant',
+    parts: [
+      {
+        type: 'text',
+        text: `${commands.followupMessage ? `${commands.followupMessage}\n\n` : ''}Une fois les fichiers récupérés, lance ceci depuis ton terminal local pour démarrer le projet :\n${steps.join('\n')}`,
+      },
+    ],
   };
 }
 

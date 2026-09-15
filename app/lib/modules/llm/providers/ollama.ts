@@ -1,8 +1,8 @@
 import { BaseProvider } from '~/lib/modules/llm/base-provider';
 import type { ModelInfo } from '~/lib/modules/llm/types';
 import type { IProviderSetting } from '~/types/model';
-import type { LanguageModelV1 } from 'ai';
-import { createOllama } from 'ollama-ai-provider';
+import type { LanguageModel } from 'ai';
+import { createOllama } from 'ollama-ai-provider-v2';
 import { logger } from '~/utils/logger';
 
 interface OllamaModelDetails {
@@ -115,7 +115,7 @@ export default class OllamaProvider extends BaseProvider {
     serverEnv?: Env;
     apiKeys?: Record<string, string>;
     providerSettings?: Record<string, IProviderSetting>;
-  }) => LanguageModelV1 = (options) => {
+  }) => LanguageModel = (options) => {
     const { apiKeys, providerSettings, serverEnv, model } = options;
     const envRecord = this.convertEnvToRecord(serverEnv);
 
@@ -127,8 +127,6 @@ export default class OllamaProvider extends BaseProvider {
       baseURL: `${baseUrl}/api`,
     });
 
-    return ollamaProvider(model, {
-      numCtx: this.getDefaultNumCtx(serverEnv),
-    });
+    return ollamaProvider(model) as unknown as LanguageModel;
   };
 }

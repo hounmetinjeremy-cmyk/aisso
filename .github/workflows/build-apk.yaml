@@ -45,6 +45,13 @@ jobs:
 
       - name: Set up Android SDK
         uses: android-actions/setup-android@v3
+        with:
+          # Le paquet legacy "tools" (par defaut avec platform-tools) a ete
+          # retire du depot Android par Google — sdkmanager echoue desormais
+          # dessus des l'installation. On ne demande que platform-tools ici ;
+          # le plugin Gradle Android telecharge lui-meme platform/build-tools
+          # manquants au moment du build (licences deja acceptees ci-dessus).
+          packages: 'platform-tools'
 
       - name: Install dependencies
         env:

@@ -1,12 +1,6 @@
-import {
-  experimental_createMCPClient,
-  type ToolSet,
-  type Message,
-  type DataStreamWriter,
-  convertToCoreMessages,
-  formatDataStreamPart,
-} from 'ai';
-import { Experimental_StdioMCPTransport } from 'ai/mcp-stdio';
+import { type ToolSet, type UIMessage, type UIMessageStreamWriter, convertToModelMessages } from 'ai';
+import { experimental_createMCPClient } from '@ai-sdk/mcp';
+import { Experimental_StdioMCPTransport } from '@ai-sdk/mcp/mcp-stdio';
 import { StreamableHTTPClientTransport } from '@modelcontextprotocol/sdk/client/streamableHttp.js';
 import { z } from 'zod';
 import type { ToolCallAnnotation } from '~/types/context';
@@ -377,7 +371,7 @@ export class MCPService {
     return toolName in this._tools;
   }
 
-  processToolCall(toolCall: ToolCall, dataStream: DataStreamWriter): void {
+  processToolCall(toolCall: ToolCall, dataStream: UIMessageStreamWriter): void {
     const { toolCallId, toolName } = toolCall;
 
     if (this.isValidToolName(toolName)) {
@@ -385,24 +379,27 @@ export class MCPService {
       const serverName = this._toolNamesToServerNames.get(toolName);
 
       if (serverName) {
-        dataStream.writeMessageAnnotation({
-          type: 'toolCall',
-          toolCallId,
-          serverName,
-          toolName,
-          toolDescription: description,
-        } satisfies ToolCallAnnotation);
+        dataStream.write({
+          type: 'data-toolCall',
+          data: {
+            type: 'toolCall',
+            toolCallId,
+            serverName,
+            toolName,
+            toolDescription: description,
+          } satisfies ToolCallAnnotation,
+        });
       }
     }
   }
 
-  async processToolInvocations(messages: Message[], dataStream: DataStreamWriter): Promise<Message[]> {
+  async processToolInvocations(messages: UIMessage[], dataStream: UIMessageStreamWriter): Promise<UIMessage[]> {
     /*
      * Parcourt TOUS les messages (pas seulement le dernier) : l'approbation client
      * ("Yes, approved.") doit déclencher l'exécution MCP réelle, sinon l'UI affiche
      * le texte d'approbation au lieu du résultat list_repos / etc.
      */
-    const out: Message[] = [];
+    const out: UIMessage[] = [];
 
     for (const message of messages) {
       const parts = message.parts;
@@ -414,28 +411,24 @@ export class MCPService {
 
       const processedParts = await Promise.all(
         parts.map(async (part) => {
-          if (part.type !== 'tool-invocation') {
+          if (part.type !== 'dynamic-tool') {
             return part;
           }
 
-          const { toolInvocation } = part;
-          const { toolName, toolCallId } = toolInvocation;
+          const { toolName, toolCallId } = part;
 
-          if (toolInvocation.state !== 'result') {
+          if (part.state !== 'output-available') {
             return part;
           }
 
           // Déjà un vrai résultat MCP (objet / tableau) — ne pas retraiter
-          if (
-            toolInvocation.result !== TOOL_EXECUTION_APPROVAL.APPROVE &&
-            toolInvocation.result !== TOOL_EXECUTION_APPROVAL.REJECT
-          ) {
+          if (part.output !== TOOL_EXECUTION_APPROVAL.APPROVE && part.output !== TOOL_EXECUTION_APPROVAL.REJECT) {
             return part;
           }
 
           let result;
 
-          if (toolInvocation.result === TOOL_EXECUTION_APPROVAL.APPROVE) {
+          if (part.output === TOOL_EXECUTION_APPROVAL.APPROVE) {
             if (!this.isValidToolName(toolName)) {
               logger.error(
                 `tool "${toolName}" not registered after ensureConfig (tools: ${Object.keys(this._tools).join(', ')})`,
@@ -445,11 +438,11 @@ export class MCPService {
               const toolInstance = this._tools[toolName];
 
               if (toolInstance && typeof toolInstance.execute === 'function') {
-                logger.debug(`calling tool "${toolName}" with args: ${JSON.stringify(toolInvocation.args)}`);
+                logger.debug(`calling tool "${toolName}" with args: ${JSON.stringify(part.input)}`);
 
                 try {
-                  result = await toolInstance.execute(toolInvocation.args, {
-                    messages: convertToCoreMessages(messages),
+                  result = await toolInstance.execute(part.input, {
+                    messages: convertToModelMessages(messages),
                     toolCallId,
                   });
                 } catch (error) {
@@ -464,24 +457,21 @@ export class MCPService {
             result = TOOL_EXECUTION_DENIED;
           }
 
-          dataStream.write(
-            formatDataStreamPart('tool_result', {
-              toolCallId,
-              result,
-            }),
-          );
+          dataStream.write({
+            type: 'tool-output-available',
+            toolCallId,
+            output: result,
+            dynamic: true,
+          });
 
           return {
             ...part,
-            toolInvocation: {
-              ...toolInvocation,
-              result,
-            },
+            output: result,
           };
         }),
       );
 
-      out.push({ ...message, parts: processedParts });
+      out.push({ ...message, parts: processedParts } as UIMessage);
     }
 
     return out;

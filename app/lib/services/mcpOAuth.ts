@@ -6,7 +6,19 @@
  * 2. We generate PKCE, optionally DCR, redirect to /authorize
  * 3. Callback receives ?code=… → exchange for tokens
  * 4. Tokens are stored in MCP settings (headers.Authorization) and used on every connection
+ *
+ * Sur l'app native (Capacitor), une redirection classique (`window.location.assign`)
+ * reste coincée dans la WebView embarquée : comme Google, GitHub bloque volontairement
+ * l'authentification depuis une WebView (même symptôme que déjà documenté pour Google
+ * Sign-in dans AuthGate.client.tsx — spinner qui tourne, jamais de page d'autorisation).
+ * On ouvre donc l'URL /authorize dans le navigateur système (@capacitor/browser =
+ * Custom Tabs/SFSafariViewController, pas une WebView) ; le retour se fait via l'App
+ * Link https://aisso.hounmetinjeremy.workers.dev déjà déclaré dans AndroidManifest.xml,
+ * intercepté par le listener appUrlOpen dans root.tsx qui route vers /mcp-oauth/callback.
  */
+
+import { Capacitor } from '@capacitor/core';
+import { Browser } from '@capacitor/browser';
 
 const MCP_OAUTH_STATE_KEY = 'mcp_oauth_pending';
 const MCP_OAUTH_TOKENS_KEY = 'mcp_oauth_tokens';
@@ -455,6 +467,11 @@ export async function startMcpOAuthFlow(serverName: string, serverUrl: string): 
 
   const target = authUrl.toString();
   console.info('[mcp-oauth] redirecting to authorize:', target);
+
+  if (Capacitor.isNativePlatform()) {
+    await Browser.open({ url: target });
+    return;
+  }
 
   // Force navigation — this is the critical step the user expects
   window.location.assign(target);

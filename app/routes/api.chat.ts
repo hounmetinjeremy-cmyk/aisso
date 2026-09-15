@@ -1,5 +1,5 @@
 import { type ActionFunctionArgs } from '@remix-run/cloudflare';
-import { createDataStream } from 'ai';
+import { createUIMessageStream, createUIMessageStreamResponse, stepCountIs, type UIMessage } from 'ai';
 import { createScopedLogger } from '~/utils/logger';
 import { streamText } from '~/lib/.server/llm/stream-text';
 import type { IProviderSetting } from '~/types/model';
@@ -32,7 +32,7 @@ async function chatAction({ context, request }: ActionFunctionArgs) {
       apiKeys: clientApiKeys,
       providerSettings: clientProviderSettings,
     } = body as {
-      messages: any[];
+      messages: UIMessage[];
       files?: FileMap;
       promptId?: string;
       contextOptimization?: boolean;
@@ -63,11 +63,11 @@ async function chatAction({ context, request }: ActionFunctionArgs) {
       username: null as string | null,
     }));
 
-    const dataStream = createDataStream({
-      async execute(dataStream) {
+    const stream = createUIMessageStream({
+      execute: async ({ writer }) => {
         let progressCounter = 1;
 
-        const processedMessages = await mcpService.processToolInvocations(messages, dataStream);
+        const processedMessages = await mcpService.processToolInvocations(messages, writer);
 
         const filteredFiles: FileMap | undefined = files;
         let summary: string | undefined;
@@ -84,21 +84,24 @@ async function chatAction({ context, request }: ActionFunctionArgs) {
 
           // Exécution serveur directe des outils MCP (résultat réel, pas "Yes, approved.")
           tools: mcpService.tools,
-          maxSteps: maxLLMSteps || 5,
+          stopWhen: stepCountIs(maxLLMSteps || 5),
           onStepFinish: ({ toolCalls }: { toolCalls: any[] }) => {
             toolCalls.forEach((toolCall) => {
-              mcpService.processToolCall(toolCall, dataStream);
+              mcpService.processToolCall(toolCall, writer);
             });
           },
         };
 
-        dataStream.writeData({
-          type: 'progress',
-          label: 'response',
-          status: 'in-progress',
-          order: progressCounter++,
-          message: 'Generating Response',
-        } satisfies ProgressAnnotation);
+        writer.write({
+          type: 'data-progress',
+          data: {
+            type: 'progress',
+            label: 'response',
+            status: 'in-progress',
+            order: progressCounter++,
+            message: 'Generating Response',
+          } satisfies ProgressAnnotation,
+        });
 
         const result = await streamText({
           messages: [...processedMessages],
@@ -116,22 +119,17 @@ async function chatAction({ context, request }: ActionFunctionArgs) {
           messageSliceId,
         });
 
-        result.mergeIntoDataStream(dataStream);
+        writer.merge(result.toUIMessageStream());
       },
-      onError: (error: any) => {
-        const errorMessage = error?.message || 'Unknown error';
+      onError: (error: unknown) => {
+        const errorMessage = error instanceof Error ? error.message : 'Unknown error';
         logger.error('Chat stream error', error);
 
         return `Custom error: ${errorMessage}`;
       },
     });
 
-    return new Response(dataStream, {
-      status: 200,
-      headers: {
-        'Content-Type': 'text/plain; charset=utf-8',
-      },
-    });
+    return createUIMessageStreamResponse({ stream });
   } catch (error: any) {
     logger.error(error);
 

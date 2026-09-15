@@ -2,9 +2,10 @@
  * Functions for managing chat data in IndexedDB
  */
 
-import type { Message } from 'ai';
+import type { UIMessage } from 'ai';
 import type { IChatMetadata } from './db'; // Import IChatMetadata
 import { logChatMessage } from './aisso-supabase';
+import { getMessageText } from '~/utils/messageText';
 
 export interface ChatMessage {
   id: string;
@@ -16,7 +17,7 @@ export interface ChatMessage {
 export interface Chat {
   id: string;
   description?: string;
-  messages: Message[];
+  messages: UIMessage[];
   timestamp: string;
   urlId?: string;
   metadata?: IChatMetadata;
@@ -96,9 +97,7 @@ export async function saveChat(db: IDBDatabase, chat: Chat): Promise<void> {
       const lastMessage = chat.messages[chat.messages.length - 1];
 
       if (lastMessage && (lastMessage.role === 'user' || lastMessage.role === 'assistant')) {
-        const content =
-          typeof lastMessage.content === 'string' ? lastMessage.content : JSON.stringify(lastMessage.content);
-        void logChatMessage(chat.id, lastMessage.role, content);
+        void logChatMessage(chat.id, lastMessage.role, getMessageText(lastMessage));
       }
 
       resolve();
