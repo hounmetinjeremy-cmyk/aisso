@@ -1,6 +1,7 @@
 import Cookies from 'js-cookie';
 import { type UIMessage } from 'ai';
 import { getAllChats, deleteChat } from '~/lib/persistence/chats';
+import type { PersistenceHandle } from '~/lib/persistence/db';
 import { getMessageText } from '~/utils/messageText';
 
 interface ExtendedMessage extends UIMessage {
@@ -18,7 +19,7 @@ export class ImportExportService {
    * @param db The IndexedDB database instance
    * @returns A promise that resolves to the export data
    */
-  static async exportAllChats(db: IDBDatabase): Promise<{ chats: any[]; exportDate: string }> {
+  static async exportAllChats(db: PersistenceHandle | undefined): Promise<{ chats: any[]; exportDate: string }> {
     if (!db) {
       throw new Error('Database not initialized');
     }
@@ -284,7 +285,7 @@ export class ImportExportService {
    * Reset all settings to default values
    * @param db The IndexedDB database instance
    */
-  static async resetAllSettings(db: IDBDatabase): Promise<void> {
+  static async resetAllSettings(db: PersistenceHandle | undefined): Promise<void> {
     // 1. Clear all localStorage items related to application settings
     const localStorageKeysToPreserve: string[] = ['debug_mode']; // Keys to preserve if needed
 
@@ -346,7 +347,7 @@ export class ImportExportService {
    * Delete all chats from the database
    * @param db The IndexedDB database instance
    */
-  static async deleteAllChats(db: IDBDatabase): Promise<void> {
+  static async deleteAllChats(db: PersistenceHandle | undefined): Promise<void> {
     // Clear chat history from localStorage
     localStorage.removeItem('bolt_chat_history');
 

@@ -1,7 +1,8 @@
-import { useState, useCallback } from 'react';
+import { useState, useCallback, useEffect } from 'react';
 import { toast } from 'react-toastify';
 import { ImportExportService } from '~/lib/services/importExportService';
-import { useIndexedDB } from '~/lib/hooks/useIndexedDB';
+import { openDatabase, type PersistenceHandle } from '~/lib/persistence/db';
+import { getAllChats, getChatById, saveChat } from '~/lib/persistence/chats';
 import { generateId } from 'ai';
 
 interface UseDataOperationsProps {
@@ -28,7 +29,7 @@ interface UseDataOperationsProps {
   /**
    * Custom database instance (optional)
    */
-  customDb?: IDBDatabase;
+  customDb?: PersistenceHandle;
 }
 
 /**
@@ -41,7 +42,13 @@ export function useDataOperations({
   onResetChats,
   customDb,
 }: UseDataOperationsProps = {}) {
-  const { db: defaultDb } = useIndexedDB();
+  const [defaultDb, setDefaultDb] = useState<PersistenceHandle | undefined>(undefined);
+
+  useEffect(() => {
+    if (!customDb) {
+      openDatabase().then(setDefaultDb);
+    }
+  }, [customDb]);
 
   // Use the custom database if provided, otherwise use the default
   const db = customDb || defaultDb;
@@ -253,12 +260,6 @@ export function useDataOperations({
       return;
     }
 
-    console.log('Export: Using database', {
-      name: db.name,
-      version: db.version,
-      objectStoreNames: Array.from(db.objectStoreNames),
-    });
-
     setIsExporting(true);
     setProgressPercent(0);
 
@@ -275,35 +276,7 @@ export function useDataOperations({
       // Step 1: Export chats
       showProgress('Retrieving chats from database', 25);
 
-      console.log('Database details:', {
-        name: db.name,
-        version: db.version,
-        objectStoreNames: Array.from(db.objectStoreNames),
-      });
-
-      // Direct database query approach for more reliable access
-      const directChats = await new Promise<any[]>((resolve, reject) => {
-        try {
-          console.log(`Creating transaction on '${db.name}' database, objectStore 'chats'`);
-
-          const transaction = db.transaction(['chats'], 'readonly');
-          const store = transaction.objectStore('chats');
-          const request = store.getAll();
-
-          request.onsuccess = () => {
-            console.log(`Found ${request.result ? request.result.length : 0} chats directly from database`);
-            resolve(request.result || []);
-          };
-
-          request.onerror = () => {
-            console.error('Error querying chats store:', request.error);
-            reject(request.error);
-          };
-        } catch (err) {
-          console.error('Error creating transaction:', err);
-          reject(err);
-        }
-      });
+      const directChats = await getAllChats(db);
 
       // Export data with direct chats
       const exportData = {
@@ -400,23 +373,8 @@ export function useDataOperations({
         // Step 1: Get chats from database
         showProgress('Retrieving chats from database', 25);
 
-        const transaction = db.transaction(['chats'], 'readonly');
-        const store = transaction.objectStore('chats');
-
-        // Create an array to store the promises for getting each chat
-        const chatPromises = chatIds.map((chatId) => {
-          return new Promise<any>((resolve, reject) => {
-            const request = store.get(chatId);
-            request.onsuccess = () => resolve(request.result);
-            request.onerror = () => reject(request.error);
-          });
-        });
-
-        // Wait for all promises to resolve
-        const chats = await Promise.all(chatPromises);
+        const chats = await Promise.all(chatIds.map((chatId) => getChatById(db, chatId)));
         const filteredChats = chats.filter(Boolean); // Remove any null/undefined results
-
-        console.log(`Retrieved ${filteredChats.length} chats for export`);
 
         // Create export data
         const exportData = {
@@ -632,13 +590,10 @@ export function useDataOperations({
         // Step 5: Import chats
         showProgress(`Importing ${validatedChats.length} chats`, 80);
 
-        const transaction = db.transaction(['chats'], 'readwrite');
-        const store = transaction.objectStore('chats');
-
         let processed = 0;
 
         for (const chat of validatedChats) {
-          store.put(chat);
+          await saveChat(db, chat);
           processed++;
 
           if (processed % 5 === 0 || processed === validatedChats.length) {
@@ -648,11 +603,6 @@ export function useDataOperations({
             );
           }
         }
-
-        await new Promise((resolve, reject) => {
-          transaction.oncomplete = resolve;
-          transaction.onerror = reject;
-        });
 
         // Step 6: Complete
         showProgress('Completing import', 100);
@@ -1094,17 +1044,9 @@ export function useDataOperations({
           await ImportExportService.deleteAllChats(db);
 
           // Reimport previous chats
-          const transaction = db.transaction(['chats'], 'readwrite');
-          const store = transaction.objectStore('chats');
-
           for (const chat of lastOperation.data.previous.chats) {
-            store.put(chat);
+            await saveChat(db, chat);
           }
-
-          await new Promise((resolve, reject) => {
-            transaction.oncomplete = resolve;
-            transaction.onerror = reject;
-          });
 
           // Dismiss progress toast before showing success toast
           toast.dismiss('progress-toast');
@@ -1142,17 +1084,9 @@ export function useDataOperations({
 
         case 'reset-chats': {
           // Restore previous chats
-          const chatTransaction = db.transaction(['chats'], 'readwrite');
-          const chatStore = chatTransaction.objectStore('chats');
-
           for (const chat of lastOperation.data.previous.chats) {
-            chatStore.put(chat);
+            await saveChat(db, chat);
           }
-
-          await new Promise((resolve, reject) => {
-            chatTransaction.oncomplete = resolve;
-            chatTransaction.onerror = reject;
-          });
 
           // Dismiss progress toast before showing success toast
           toast.dismiss('progress-toast');
