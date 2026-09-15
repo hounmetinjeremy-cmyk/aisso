@@ -5,17 +5,18 @@ import { readFilesOneByOne, type SequentialProgress } from '~/lib/utils/sequenti
 import { IGNORE_PATTERNS } from './llm/constants';
 
 /*
- * Lire un dépôt fichier par fichier via l'API GitHub (un aller-retour réseau
- * par fichier) prend du temps — sur un tour de chat, ce temps s'ajoute à
- * celui que l'utilisateur attend déjà pour une réponse. On limite donc le
- * nombre de fichiers réellement indexés à un tour raisonnable, et on
- * privilégie les fichiers les plus utiles à la compréhension du projet
- * (racine du dépôt, chemins courts) plutôt qu'un ordre arbitraire — un repo
- * plus gros que cette limite reste compréhensible avec ses fichiers clés
- * déjà indexés, plutôt que de risquer un tour de chat qui traîne en longueur
- * ou expire.
+ * Un appel doit aller jusqu'au bout du dépôt sans s'arrêter en cours de
+ * route pour attendre que l'utilisateur redemande — ce plafond n'est donc
+ * PAS un "lot par appel" : c'est uniquement un garde-fou contre un dépôt
+ * réellement pathologique (des dizaines de milliers de fichiers), pour que
+ * même ce cas extrême reste borné dans le temps. Dans l'immense majorité des
+ * projets (même gros), le dépôt filtré (voir IGNORE_PATTERNS) tient très
+ * largement en dessous et l'indexation se termine donc toujours complète en
+ * un seul appel. On privilégie quand même les fichiers les plus utiles à la
+ * compréhension du projet (racine du dépôt, chemins courts) en premier, au
+ * cas où ce plafond serait malgré tout atteint.
  */
-const MAX_FILES_TO_INDEX = 400;
+const MAX_FILES_SAFETY_CEILING = 3000;
 
 export interface IndexProjectParams {
   owner: string;
@@ -34,17 +35,16 @@ export interface IndexProjectResult {
 }
 
 /**
- * Indexation séquentielle d'un dépôt GitHub dans Supabase, reprenable par
- * vagues : 1) liste tous les chemins (un seul appel), 2) écarte ceux déjà
- * indexés lors d'un appel précédent (même user/repo/branch), 3) ouvre et lit
- * le contenu complet de chaque fichier restant retenu UN PAR UN (jamais plus
- * d'un fichier en mémoire à la fois), dans la limite de MAX_FILES_TO_INDEX
- * pour cet appel, 4) stocke immédiatement ce contenu en base au fur et à
+ * Indexation séquentielle et COMPLÈTE d'un dépôt GitHub dans Supabase en un
+ * seul appel : 1) liste tous les chemins (un seul appel), 2) écarte ceux
+ * déjà indexés (reprise automatique si un appel précédent s'est arrêté en
+ * erreur en cours de route), 3) ouvre et lit le contenu complet de CHAQUE
+ * fichier restant UN PAR UN (jamais plus d'un fichier en mémoire à la fois),
+ * jusqu'à épuisement de la liste — pas de pause pour attendre une nouvelle
+ * sollicitation, 4) stocke immédiatement ce contenu en base au fur et à
  * mesure — jamais un gros tableau de tout le dépôt accumulé en mémoire avant
- * d'écrire. Un dépôt plus gros que cette limite n'est donc jamais tronqué
- * pour de bon : rappeler cet outil sur le même dépôt/branche reprend
- * exactement où la vague précédente s'est arrêtée (voir `complete` /
- * `filesRemaining` dans le résultat) jusqu'à couverture complète.
+ * d'écrire. `complete` dans le résultat n'est `false` que dans le cas
+ * extrême où MAX_FILES_SAFETY_CEILING a été atteint.
  */
 export async function indexGithubProjectSequential(
   supabase: SupabaseClient,
@@ -71,7 +71,7 @@ export async function indexGithubProjectSequential(
     return depthDiff !== 0 ? depthDiff : a.path.localeCompare(b.path);
   });
 
-  const entriesToIndex = sortedEntries.slice(0, MAX_FILES_TO_INDEX);
+  const entriesToIndex = sortedEntries.slice(0, MAX_FILES_SAFETY_CEILING);
   const shaByPath = new Map(entriesToIndex.map((entry) => [entry.path, entry.sha]));
   const binaryByPath = new Map<string, boolean>();
 
