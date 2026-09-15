@@ -67,6 +67,16 @@ async function chatAction({ context, request }: ActionFunctionArgs) {
       execute: async ({ writer }) => {
         let progressCounter = 1;
 
+        /*
+         * Flux d'étapes pour l'UI (voir ProgressCompilation.tsx) : chaque
+         * `step-N` est d'abord écrit "in-progress", puis réécrit "complete"
+         * dans onStepFinish — même label, donc l'UI remplace l'entrée au
+         * lieu d'en accumuler une dupliquée. onFinish clôt toujours la
+         * dernière étape, y compris pour un tour sans aucun appel d'outil.
+         */
+        let stepIndex = 0;
+        const maxSteps = maxLLMSteps || 5;
+
         const processedMessages = await mcpService.processToolInvocations(messages, writer);
 
         const filteredFiles: FileMap | undefined = files;
@@ -84,10 +94,51 @@ async function chatAction({ context, request }: ActionFunctionArgs) {
 
           // Exécution serveur directe des outils MCP (résultat réel, pas "Yes, approved.")
           tools: mcpService.tools,
-          stopWhen: stepCountIs(maxLLMSteps || 5),
+          stopWhen: stepCountIs(maxSteps),
           onStepFinish: ({ toolCalls }: { toolCalls: any[] }) => {
             toolCalls.forEach((toolCall) => {
               mcpService.processToolCall(toolCall, writer);
+            });
+
+            writer.write({
+              type: 'data-progress',
+              data: {
+                type: 'progress',
+                label: `step-${stepIndex}`,
+                status: 'complete',
+                order: progressCounter++,
+                message:
+                  toolCalls.length > 0
+                    ? `Étape ${stepIndex + 1} sur ${maxSteps} : ${toolCalls.length} outil${toolCalls.length > 1 ? 's' : ''} exécuté${toolCalls.length > 1 ? 's' : ''}`
+                    : `Étape ${stepIndex + 1} sur ${maxSteps} terminée`,
+              } satisfies ProgressAnnotation,
+            });
+
+            stepIndex++;
+
+            if (stepIndex < maxSteps) {
+              writer.write({
+                type: 'data-progress',
+                data: {
+                  type: 'progress',
+                  label: `step-${stepIndex}`,
+                  status: 'in-progress',
+                  order: progressCounter++,
+                  message: `Étape ${stepIndex + 1} sur ${maxSteps} en cours…`,
+                } satisfies ProgressAnnotation,
+              });
+            }
+          },
+          onFinish: () => {
+            writer.write({
+              type: 'data-progress',
+              data: {
+                type: 'progress',
+                label: `step-${stepIndex}`,
+                status: 'complete',
+                order: progressCounter++,
+                message: 'Réponse terminée',
+              } satisfies ProgressAnnotation,
             });
           },
         };
@@ -96,10 +147,10 @@ async function chatAction({ context, request }: ActionFunctionArgs) {
           type: 'data-progress',
           data: {
             type: 'progress',
-            label: 'response',
+            label: `step-${stepIndex}`,
             status: 'in-progress',
             order: progressCounter++,
-            message: 'Generating Response',
+            message: `Étape 1 sur ${maxSteps} : réflexion en cours…`,
           } satisfies ProgressAnnotation,
         });
 
