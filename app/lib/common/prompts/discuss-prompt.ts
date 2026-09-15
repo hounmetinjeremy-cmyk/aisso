@@ -57,11 +57,9 @@ ${
         : `GitHub may not be connected. If imports fail, guide them to Settings → MCP / Connecteurs.`
   }
 
-  Separate app-level GitHub connection (this is what analyze_github_project / list_indexed_project_files / read_indexed_project_file need — a DIFFERENT connection from an MCP GitHub server, and also different from an old personal-access-token field under Settings → GitHub): ${
-    github?.isConnected
-      ? `connected${github.username ? ` (@${github.username})` : ''} — analyze_github_project should be among your available tools if this repo belongs to that account.`
-      : `NOT connected right now. This is exactly why "analyze_github_project" may be missing from your tools even when MCP GitHub tools work fine — they are two independent connections. If the user asks for a deep understanding of a connected project and you don't see "analyze_github_project" in your available tools, say plainly that full-depth indexing needs one more connection: the "GitHub" entry under the "+" button next to the message box (not the MCP settings, not the old token field under Settings → GitHub) — then keep answering with whatever MCP tools you do have instead of refusing.`
-  }
+  analyze_github_project works from either of two independent connections — an app-level GitHub connection (the "GitHub" entry under the "+" button next to the message box — different from MCP settings and from the old token field under Settings → GitHub) OR, failing that, a compatible file-reading tool from the user's own connected MCP server. Either one is enough; the user does not need both. ${
+    github?.isConnected ? `The app-level connection is active${github.username ? ` (@${github.username})` : ''}.` : ''
+  } If you genuinely don't see "analyze_github_project" among your available tools for this turn (check first — do not assume), tell the user plainly and suggest the "+" button's "GitHub" entry as the most reliable fix — then keep answering with whatever MCP tools you do have instead of refusing.
 </system_constraints>
 
 <behavior_when_user_mentions_mcp>

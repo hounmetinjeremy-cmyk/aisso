@@ -6,18 +6,31 @@ import {
   listIndexedFilePaths,
   readIndexedFile,
 } from '~/lib/.server/project-indexer.server';
+import { indexGithubProjectViaMcp, type McpFileContentsCaller } from '~/lib/.server/project-indexer-mcp.server';
+import { FILE_READ_TOOL_NAME_PATTERN } from '~/lib/.server/llm/mcp-file-capture.server';
 import type { ProgressAnnotation } from '~/types/context';
 
 /**
  * Outils exposés au modèle pour comprendre en profondeur un dépôt GitHub
  * connecté — remplace le comportement précédent où seule la liste des noms
- * de fichiers était visible (via les outils MCP), jamais leur contenu. Voir
- * project-indexer.server.ts pour la lecture séquentielle + stockage.
+ * de fichiers était visible (via les outils MCP), jamais leur contenu.
+ *
+ * Deux sources possibles pour analyze_github_project, choisies automatiquement
+ * selon ce qui est disponible pour l'utilisateur (jamais besoin des deux) :
+ * - githubToken (connexion GitHub "app", connected_accounts) -> lecture REST
+ *   directe (project-indexer.server.ts), la plus rapide.
+ * - à défaut, un outil MCP de lecture de fichier déjà connecté par
+ *   l'utilisateur (ex: "get_file_contents") -> même résultat, piloté
+ *   directement au lieu de compter sur le modèle pour tout relire lui-même
+ *   tour après tour (project-indexer-mcp.server.ts).
  */
 export function buildProjectIndexTools(params: {
   supabase: SupabaseClient | null;
   userId: string | null;
   githubToken: string | null;
+
+  /** Outils MCP déjà connectés par l'utilisateur (mcpService.tools) — pour la source de secours ci-dessus. */
+  mcpTools?: ToolSet;
 
   /*
    * Pour publier une progression pendant l'indexation (qui peut prendre du
@@ -28,11 +41,19 @@ export function buildProjectIndexTools(params: {
   writer?: Pick<UIMessageStreamWriter, 'write'>;
   nextProgressOrder?: () => number;
 }): ToolSet {
-  const { supabase, userId, githubToken, writer, nextProgressOrder } = params;
+  const { supabase, userId, githubToken, mcpTools, writer, nextProgressOrder } = params;
 
-  if (!supabase || !userId || !githubToken) {
+  const mcpFileTool = Object.entries(mcpTools ?? {}).find(
+    ([toolName, toolDef]) => FILE_READ_TOOL_NAME_PATTERN.test(toolName) && typeof toolDef.execute === 'function',
+  )?.[1];
+
+  if (!supabase || !userId || (!githubToken && !mcpFileTool)) {
     return {};
   }
+
+  const callMcpTool: McpFileContentsCaller | null = mcpFileTool
+    ? async (input) => mcpFileTool.execute!(input, { messages: [], toolCallId: 'project-indexer' })
+    : null;
 
   return {
     analyze_github_project: tool({
@@ -44,24 +65,23 @@ export function buildProjectIndexTools(params: {
         branch: z.string().describe('Branche à analyser (ex: main)'),
       }),
       execute: async ({ owner, repo, branch }) => {
-        const result = await indexGithubProjectSequential(
-          supabase,
-          userId,
-          githubToken,
-          { owner, repo, branch },
-          (p) => {
-            writer?.write({
-              type: 'data-progress',
-              data: {
-                type: 'progress',
-                label: 'project-index',
-                status: 'in-progress',
-                order: nextProgressOrder?.() ?? 0,
-                message: `Analyse du projet : ${p.current}/${p.total} — ${p.fileName}`,
-              } satisfies ProgressAnnotation,
-            });
-          },
-        );
+        const onProgress = (p: { current: number; total: number; fileName: string }) => {
+          writer?.write({
+            type: 'data-progress',
+            data: {
+              type: 'progress',
+              label: 'project-index',
+              status: 'in-progress',
+              order: nextProgressOrder?.() ?? 0,
+              message: `Analyse du projet : ${p.current}/${p.total} — ${p.fileName}`,
+            } satisfies ProgressAnnotation,
+          });
+        };
+
+        const result =
+          githubToken && supabase
+            ? await indexGithubProjectSequential(supabase, userId, githubToken, { owner, repo, branch }, onProgress)
+            : await indexGithubProjectViaMcp(supabase, userId, callMcpTool!, { owner, repo, branch }, onProgress);
 
         writer?.write({
           type: 'data-progress',
