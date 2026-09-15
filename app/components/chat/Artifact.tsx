@@ -158,7 +158,7 @@ const ActionList = memo(({ actions }: ActionListProps) => {
     <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }} transition={{ duration: 0.15 }}>
       <ul className="list-none space-y-2.5">
         {actions.map((action, index) => {
-          const { status, type, content, filePath } = action as any;
+          const { status, type, content, filePath, linesAdded, linesRemoved } = action as any;
 
           return (
             <motion.li
@@ -185,7 +185,7 @@ const ActionList = memo(({ actions }: ActionListProps) => {
                 </div>
                 <div className="text-bolt-elements-textPrimary">
                   {type === 'file' ? (
-                    <span>
+                    <span className="inline-flex items-center gap-1.5 flex-wrap">
                       Create{' '}
                       <code
                         className="bg-bolt-elements-artifacts-inlineCode-background text-bolt-elements-artifacts-inlineCode-text px-1.5 py-0.5 rounded-md"
@@ -193,6 +193,9 @@ const ActionList = memo(({ actions }: ActionListProps) => {
                       >
                         {filePath}
                       </code>
+                      {status === 'complete' && (linesAdded > 0 || linesRemoved > 0) && (
+                        <DiffStatBadge linesAdded={linesAdded} linesRemoved={linesRemoved} />
+                      )}
                     </span>
                   ) : type === 'shell' ? (
                     <div className="flex items-center w-full min-h-[28px]">
@@ -215,6 +218,15 @@ const ActionList = memo(({ actions }: ActionListProps) => {
     </motion.div>
   );
 });
+
+function DiffStatBadge({ linesAdded, linesRemoved }: { linesAdded?: number; linesRemoved?: number }) {
+  return (
+    <span className="inline-flex items-center gap-1 text-xs font-mono shrink-0">
+      {!!linesAdded && <span className="text-bolt-elements-icon-success">+{linesAdded}</span>}
+      {!!linesRemoved && <span className="text-bolt-elements-icon-error">-{linesRemoved}</span>}
+    </span>
+  );
+}
 
 function getIconColor(status: ActionState['status'] | 'complete' | 'running') {
   switch (status) {
