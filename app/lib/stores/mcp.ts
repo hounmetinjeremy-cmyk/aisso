@@ -14,11 +14,15 @@ const defaultSettings = {
   /*
    * Comprendre un projet en profondeur via des lectures MCP fichier par
    * fichier (quand analyze_github_project n'est pas disponible) prend
-   * facilement plus de 5 appels d'outils (lister + lire chaque fichier) —
-   * avec 5, le modèle était coupé après 3-4 fichiers et finissait par
-   * demander "veux-tu que je continue ?" au lieu de simplement continuer.
+   * facilement plus de quelques appels d'outils (lister + lire chaque
+   * fichier de chaque dossier) — une limite basse coupait le modèle après
+   * seulement 3-4 fichiers, qui finissait par demander "veux-tu que je
+   * continue ?" au lieu de simplement continuer. Fixé volontairement haut
+   * (traité comme "illimité" en usage réel) : c'est un garde-fou contre une
+   * boucle réellement infinie, pas un frein normal — voir aussi
+   * MAX_FILES_SAFETY_CEILING dans project-indexer.server.ts, même logique.
    */
-  maxLLMSteps: 20,
+  maxLLMSteps: 500,
   mcpConfig: {
     mcpServers: {},
   },
