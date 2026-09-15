@@ -12,6 +12,7 @@ import { DEFAULT_MODEL, DEFAULT_PROVIDER, PROMPT_COOKIE_KEY, PROVIDER_LIST } fro
 import { cubicEasingFn } from '~/utils/easings';
 import { createScopedLogger, renderLogger } from '~/utils/logger';
 import { BaseChat } from './BaseChat';
+import { getApiKeysFromCookies } from './APIKeyManager';
 import Cookies from 'js-cookie';
 import { debounce } from '~/utils/debounce';
 import { useSettings } from '~/lib/hooks/useSettings';
@@ -233,7 +234,15 @@ export const ChatImpl = memo(
       transport: new DefaultChatTransport({
         api: '/api/chat',
         body: () => ({
-          apiKeys,
+          /*
+           * useChat (v5) ne recrée pas son transport à chaque render — cette
+           * fonction reste celle créée au montage, avec `apiKeys` figé à sa
+           * valeur de l'époque (souvent {}). On relit donc le cookie à
+           * chaque appel plutôt que de fermer sur l'état React, sinon une
+           * clé API ajoutée après le montage du chat n'est jamais envoyée
+           * au serveur (l'UI la montre pourtant comme configurée).
+           */
+          apiKeys: getApiKeysFromCookies(),
           files,
           promptId,
           contextOptimization: contextOptimizationEnabled,
