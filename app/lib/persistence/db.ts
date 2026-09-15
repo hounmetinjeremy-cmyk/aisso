@@ -12,6 +12,7 @@ import {
   remoteSetSnapshot,
   remoteDeleteSnapshot,
 } from './chats-remote.client';
+import { ensureLegacyChatsMigrated } from './legacy-idb-migration.client';
 
 export interface IChatMetadata {
   gitUrl: string;
@@ -33,6 +34,7 @@ export async function openDatabase(): Promise<PersistenceHandle | undefined> {
 }
 
 export async function getAll(_db: PersistenceHandle | undefined): Promise<ChatHistoryItem[]> {
+  await ensureLegacyChatsMigrated();
   return (await remoteListChats()) as ChatHistoryItem[];
 }
 
@@ -53,7 +55,10 @@ export async function setMessages(
 }
 
 export async function getMessages(_db: PersistenceHandle | undefined, id: string): Promise<ChatHistoryItem> {
+  await ensureLegacyChatsMigrated();
+
   const chat = await remoteGetChat(id);
+
   return chat as unknown as ChatHistoryItem;
 }
 
