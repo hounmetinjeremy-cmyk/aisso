@@ -140,6 +140,16 @@ export default function McpTab() {
 
     try {
       await startMcpOAuthFlow(serverName, config.url);
+
+      /*
+       * Sur l'app native, startMcpOAuthFlow ouvre le navigateur système
+       * (Browser.open) et revient immédiatement — contrairement au web où
+       * window.location.assign() ne rend jamais la main (la page navigue
+       * ailleurs). Sans ça, le bouton resterait bloqué sur "Redirection
+       * vers GitHub…" jusqu'au retour de l'app link (voir root.tsx), alors
+       * que le navigateur système, lui, s'est bien ouvert.
+       */
+      setConnectingServer(null);
     } catch (e) {
       const msg = e instanceof Error ? e.message : 'Impossible de démarrer OAuth';
       setError(msg);

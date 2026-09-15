@@ -1,6 +1,9 @@
 import { useStore } from '@nanostores/react';
 import type { LinksFunction } from '@remix-run/cloudflare';
-import { Links, Meta, Outlet, Scripts, ScrollRestoration } from '@remix-run/react';
+import { Links, Meta, Outlet, Scripts, ScrollRestoration, useNavigate } from '@remix-run/react';
+import { Capacitor } from '@capacitor/core';
+import { App as CapacitorApp } from '@capacitor/app';
+import { Browser } from '@capacitor/browser';
 import tailwindReset from '@unocss/reset/tailwind-compat.css?url';
 import { themeStore } from './lib/stores/theme';
 import { stripIndents } from './utils/stripIndent';
@@ -115,6 +118,37 @@ import { logStore } from './lib/stores/logs';
 
 export default function App() {
   const theme = useStore(themeStore);
+  const navigate = useNavigate();
+
+  /*
+   * Retour de l'OAuth MCP (ex: connecteur GitHub) ouvert dans le navigateur
+   * système sur l'app native — voir mcpOAuth.ts. Le fournisseur redirige
+   * vers https://aisso.hounmetinjeremy.workers.dev/mcp-oauth/callback?...,
+   * Android intercepte via l'App Link déclaré dans AndroidManifest.xml et
+   * relance l'app au lieu de laisser l'utilisateur dans le navigateur — sans
+   * ce listener, l'app reviendrait au premier plan sans jamais router vers
+   * /mcp-oauth/callback, donc sans jamais échanger le code contre un token.
+   */
+  useEffect(() => {
+    if (!Capacitor.isNativePlatform()) {
+      return undefined;
+    }
+
+    const listenerPromise = CapacitorApp.addListener('appUrlOpen', ({ url }) => {
+      Browser.close().catch(() => {});
+
+      try {
+        const parsed = new URL(url);
+        navigate(`${parsed.pathname}${parsed.search}`);
+      } catch (error) {
+        console.error('[app-link] failed to parse incoming URL', url, error);
+      }
+    });
+
+    return () => {
+      listenerPromise.then((listener) => listener.remove()).catch(() => {});
+    };
+  }, [navigate]);
 
   useEffect(() => {
     logStore.logSystem('Application initialized', {
