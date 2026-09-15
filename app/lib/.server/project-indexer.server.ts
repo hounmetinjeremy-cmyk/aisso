@@ -26,19 +26,25 @@ export interface IndexProjectParams {
 export interface IndexProjectResult {
   filesIndexed: number;
   filesSkippedBySize: number;
-  filesSkippedByLimit: number;
+  filesAlreadyIndexed: number;
+  filesRemaining: number;
   totalMatchingFiles: number;
   truncatedTree: boolean;
+  complete: boolean;
 }
 
 /**
- * Indexation séquentielle et complète d'un dépôt GitHub dans Supabase :
- * 1) liste tous les chemins (un seul appel), 2) ouvre et lit le contenu
- * complet de chaque fichier retenu UN PAR UN (jamais plus d'un fichier en
- * mémoire à la fois), 3) stocke immédiatement ce contenu en base au fur et
- * à mesure — jamais un gros tableau de tout le dépôt accumulé en mémoire
- * avant d'écrire. Remplace l'ancien comportement où l'IA ne voyait que les
- * noms de fichiers (liste/arbre) sans jamais lire leur contenu.
+ * Indexation séquentielle d'un dépôt GitHub dans Supabase, reprenable par
+ * vagues : 1) liste tous les chemins (un seul appel), 2) écarte ceux déjà
+ * indexés lors d'un appel précédent (même user/repo/branch), 3) ouvre et lit
+ * le contenu complet de chaque fichier restant retenu UN PAR UN (jamais plus
+ * d'un fichier en mémoire à la fois), dans la limite de MAX_FILES_TO_INDEX
+ * pour cet appel, 4) stocke immédiatement ce contenu en base au fur et à
+ * mesure — jamais un gros tableau de tout le dépôt accumulé en mémoire avant
+ * d'écrire. Un dépôt plus gros que cette limite n'est donc jamais tronqué
+ * pour de bon : rappeler cet outil sur le même dépôt/branche reprend
+ * exactement où la vague précédente s'est arrêtée (voir `complete` /
+ * `filesRemaining` dans le résultat) jusqu'à couverture complète.
  */
 export async function indexGithubProjectSequential(
   supabase: SupabaseClient,
@@ -49,13 +55,18 @@ export async function indexGithubProjectSequential(
 ): Promise<IndexProjectResult> {
   const { owner, repo, branch } = params;
 
-  const { entries, skippedBySize, truncated } = await listRepoTreeEntries(token, { owner, repo, branch });
+  const [{ entries, skippedBySize, truncated }, alreadyIndexedPaths] = await Promise.all([
+    listRepoTreeEntries(token, { owner, repo, branch }),
+    listIndexedFilePaths(supabase, userId, { owner, repo, branch }),
+  ]);
 
+  const alreadyIndexed = new Set(alreadyIndexedPaths);
   const ig = ignore().add(IGNORE_PATTERNS);
   const matchingEntries = entries.filter((entry) => !ig.ignores(entry.path));
+  const pendingEntries = matchingEntries.filter((entry) => !alreadyIndexed.has(entry.path));
 
   // Fichiers courts et proches de la racine d'abord (README, package.json, entrées principales, ...).
-  const sortedEntries = [...matchingEntries].sort((a, b) => {
+  const sortedEntries = [...pendingEntries].sort((a, b) => {
     const depthDiff = a.path.split('/').length - b.path.split('/').length;
     return depthDiff !== 0 ? depthDiff : a.path.localeCompare(b.path);
   });
@@ -111,12 +122,16 @@ export async function indexGithubProjectSequential(
     { pauseMs: 0, onProgress },
   );
 
+  const filesRemaining = Math.max(0, sortedEntries.length - entriesToIndex.length);
+
   return {
     filesIndexed,
     filesSkippedBySize: skippedBySize,
-    filesSkippedByLimit: Math.max(0, sortedEntries.length - entriesToIndex.length),
+    filesAlreadyIndexed: alreadyIndexed.size,
+    filesRemaining,
     totalMatchingFiles: matchingEntries.length,
     truncatedTree: truncated,
+    complete: filesRemaining === 0,
   };
 }
 
