@@ -9,6 +9,7 @@ import type { DesignScheme } from '~/types/design-scheme';
 import { MCPService, type MCPConfig } from '~/lib/services/mcpService';
 import { getGithubConnectionStatus, getGithubAccessToken } from '~/lib/.server/llm/github-tools';
 import { buildProjectIndexTools } from '~/lib/.server/llm/project-index-tools';
+import { tryExtractMcpFileRead, captureMcpFileRead } from '~/lib/.server/llm/mcp-file-capture.server';
 import { verifyFirebaseIdToken } from '~/lib/firebase-verify.server';
 import { getSupabaseAdmin } from '~/lib/supabase-admin.server';
 
@@ -88,11 +89,14 @@ async function chatAction({ context, request }: ActionFunctionArgs) {
          * sert que si maxLLMSteps n'a jamais été transmis (aucune requête
          * client normale ne devrait l'omettre).
          */
-        const maxSteps = maxLLMSteps || 20;
+        const maxSteps = maxLLMSteps || 500;
+
+        // Partagé entre analyze_github_project et la capture automatique des lectures MCP ci-dessous.
+        const supabaseAdmin = env?.SUPABASE_SERVICE_ROLE_KEY ? getSupabaseAdmin(env.SUPABASE_SERVICE_ROLE_KEY) : null;
 
         // Construit ici (pas plus haut) pour pouvoir publier sa progression via `writer` pendant l'indexation.
         const projectIndexTools = buildProjectIndexTools({
-          supabase: env?.SUPABASE_SERVICE_ROLE_KEY ? getSupabaseAdmin(env.SUPABASE_SERVICE_ROLE_KEY) : null,
+          supabase: supabaseAdmin,
           userId,
           githubToken,
           writer,
@@ -117,10 +121,28 @@ async function chatAction({ context, request }: ActionFunctionArgs) {
           // Exécution serveur directe des outils MCP (résultat réel, pas "Yes, approved.") + indexation projet
           tools: { ...mcpService.tools, ...projectIndexTools },
           stopWhen: stepCountIs(maxSteps),
-          onStepFinish: ({ toolCalls }: { toolCalls: any[] }) => {
+          onStepFinish: ({ toolCalls, toolResults }: { toolCalls: any[]; toolResults: any[] }) => {
             toolCalls.forEach((toolCall) => {
               mcpService.processToolCall(toolCall, writer);
             });
+
+            /*
+             * Sans connexion GitHub "app" (donc sans analyze_github_project), le
+             * modèle lit les fichiers un par un via les outils du serveur MCP —
+             * on mémorise chaque lecture reconnue au passage, sans bloquer le
+             * tour de chat si l'extraction échoue (voir mcp-file-capture.server.ts).
+             */
+            if (supabaseAdmin && userId) {
+              (toolResults || []).forEach((toolResult) => {
+                const captured = tryExtractMcpFileRead(toolResult?.toolName, toolResult?.input, toolResult?.output);
+
+                if (captured) {
+                  captureMcpFileRead(supabaseAdmin, userId, captured).catch((error) => {
+                    logger.error('captureMcpFileRead failed', error);
+                  });
+                }
+              });
+            }
 
             writer.write({
               type: 'data-progress',

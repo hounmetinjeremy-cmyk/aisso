@@ -15,7 +15,7 @@ export default function McpTab() {
   const checkServersAvailabilities = useMCPStore((state) => state.checkServersAvailabilities);
 
   const [isSaving, setIsSaving] = useState(false);
-  const [maxLLMSteps, setMaxLLMSteps] = useState(20);
+  const [maxLLMSteps, setMaxLLMSteps] = useState(500);
   const [error, setError] = useState<string | null>(null);
   const [isCheckingServers, setIsCheckingServers] = useState(false);
   const [expandedServer, setExpandedServer] = useState<string | null>(null);
@@ -316,7 +316,7 @@ export default function McpTab() {
               id="max-llm-steps"
               type="number"
               min="1"
-              max="20"
+              max="500"
               value={maxLLMSteps}
               onChange={(e) => setMaxLLMSteps(parseInt(e.target.value, 10) || 1)}
               className="w-full px-3 py-2 text-sm rounded-lg bg-white dark:bg-bolt-elements-background-depth-4 border border-bolt-elements-borderColor text-bolt-elements-textPrimary focus:outline-none focus:ring-2 focus:ring-blue-500"
