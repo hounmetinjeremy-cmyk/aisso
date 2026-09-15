@@ -82,7 +82,13 @@ async function chatAction({ context, request }: ActionFunctionArgs) {
          * dernière étape, y compris pour un tour sans aucun appel d'outil.
          */
         let stepIndex = 0;
-        const maxSteps = maxLLMSteps || 5;
+
+        /*
+         * Même valeur par défaut que app/lib/stores/mcp.ts — ce fallback ne
+         * sert que si maxLLMSteps n'a jamais été transmis (aucune requête
+         * client normale ne devrait l'omettre).
+         */
+        const maxSteps = maxLLMSteps || 20;
 
         // Construit ici (pas plus haut) pour pouvoir publier sa progression via `writer` pendant l'indexation.
         const projectIndexTools = buildProjectIndexTools({
