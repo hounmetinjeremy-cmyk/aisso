@@ -5,6 +5,7 @@ import { generateId, type UIMessage } from 'ai';
 import { toast } from 'react-toastify';
 import { workbenchStore } from '~/lib/stores/workbench';
 import { logStore } from '~/lib/stores/logs'; // Import logStore
+import { useAuth } from '~/lib/hooks/useAuth.client';
 import {
   getMessages,
   getNextId,
@@ -40,6 +41,7 @@ export function useChatHistory() {
   const navigate = useNavigate();
   const { id: mixedId } = useLoaderData<{ id?: string }>();
   const [searchParams] = useSearchParams();
+  const { loading: authLoading } = useAuth();
 
   const [archivedMessages, setArchivedMessages] = useState<UIMessage[]>([]);
   const [initialMessages, setInitialMessages] = useState<UIMessage[]>([]);
@@ -56,6 +58,17 @@ export function useChatHistory() {
         toast.error('Chat persistence is unavailable');
       }
 
+      return;
+    }
+
+    /*
+     * Le chargement (Supabase, via un jeton Firebase) partait parfois avant que
+     * Firebase ait fini de restaurer la session juste après un rechargement de
+     * page — l'appel échouait alors avec "Non authentifié", et comme ce catch
+     * ne débloquait jamais `ready`, la page restait blanche indéfiniment. On
+     * attend donc que l'état d'authentification soit résolu avant de charger.
+     */
+    if (authLoading) {
       return;
     }
 
@@ -160,12 +173,21 @@ ${value.content}
 
           logStore.logError('Failed to load chat messages or snapshot', error); // Updated error message
           toast.error('Failed to load chat: ' + error.message); // More specific error
+
+          /*
+           * Sans ça, `ready` restait bloqué à `false` pour toujours dès que cet
+           * appel réseau (Supabase) échouait — Chat() ne rend alors plus rien
+           * (page blanche, menu hamburger inerte) au lieu de récupérer vers un
+           * état utilisable.
+           */
+          navigate('/', { replace: true });
+          setReady(true);
         });
     } else {
       // Handle case where there is no mixedId (e.g., new chat)
       setReady(true);
     }
-  }, [mixedId, db, navigate, searchParams]); // Added db, navigate, searchParams dependencies
+  }, [mixedId, db, navigate, searchParams, authLoading]); // Added db, navigate, searchParams dependencies
 
   const takeSnapshot = useCallback(
     async (chatIdx: string, files: FileMap, _chatId?: string | undefined, chatSummary?: string) => {
