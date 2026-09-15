@@ -70,12 +70,6 @@ async function chatAction({ context, request }: ActionFunctionArgs) {
       getGithubAccessToken(env as any, userId).catch(() => null),
     ]);
 
-    const projectIndexTools = buildProjectIndexTools({
-      supabase: env?.SUPABASE_SERVICE_ROLE_KEY ? getSupabaseAdmin(env.SUPABASE_SERVICE_ROLE_KEY) : null,
-      userId,
-      githubToken,
-    });
-
     const stream = createUIMessageStream({
       execute: async ({ writer }) => {
         let progressCounter = 1;
@@ -89,6 +83,15 @@ async function chatAction({ context, request }: ActionFunctionArgs) {
          */
         let stepIndex = 0;
         const maxSteps = maxLLMSteps || 5;
+
+        // Construit ici (pas plus haut) pour pouvoir publier sa progression via `writer` pendant l'indexation.
+        const projectIndexTools = buildProjectIndexTools({
+          supabase: env?.SUPABASE_SERVICE_ROLE_KEY ? getSupabaseAdmin(env.SUPABASE_SERVICE_ROLE_KEY) : null,
+          userId,
+          githubToken,
+          writer,
+          nextProgressOrder: () => progressCounter++,
+        });
 
         const processedMessages = await mcpService.processToolInvocations(messages, writer);
 
