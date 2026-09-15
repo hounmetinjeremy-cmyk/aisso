@@ -27,7 +27,7 @@ export function buildProjectIndexTools(params: {
   return {
     analyze_github_project: tool({
       description:
-        "Indexe en profondeur un dépôt GitHub connecté : ouvre et lit le contenu COMPLET de chaque fichier pertinent un par un (jamais tout en mémoire d'un coup) et le stocke en base — à utiliser dès qu'une question porte sur ce que fait un projet, sa structure ou son fonctionnement, plutôt que de deviner depuis les noms de fichiers ou dossiers. Ensuite, utilise list_indexed_project_files et read_indexed_project_file pour explorer le contenu stocké.",
+        "Indexe en profondeur un dépôt GitHub connecté : ouvre et lit le contenu COMPLET de chaque fichier pertinent un par un (jamais tout en mémoire d'un coup) et le stocke en base — à utiliser dès qu'une question porte sur ce que fait un projet, sa structure ou son fonctionnement, plutôt que de deviner depuis les noms de fichiers ou dossiers. Sur un très gros dépôt, un seul appel n'indexe qu'un lot de fichiers (les plus utiles d'abord) — si le résultat indique complete: false, RAPPELLE cet outil avec les mêmes owner/repo/branch pour indexer le lot suivant (il reprend automatiquement là où il s'est arrêté, sans jamais réindexer ce qui l'est déjà), et répète jusqu'à complete: true ou jusqu'à avoir assez d'information pour répondre. Ensuite, utilise list_indexed_project_files et read_indexed_project_file pour explorer le contenu stocké.",
       inputSchema: z.object({
         owner: z.string().describe('Propriétaire du dépôt GitHub (utilisateur ou organisation)'),
         repo: z.string().describe('Nom du dépôt'),
@@ -37,11 +37,11 @@ export function buildProjectIndexTools(params: {
         const result = await indexGithubProjectSequential(supabase, userId, githubToken, { owner, repo, branch });
 
         return {
-          message: `Indexation terminée : ${result.filesIndexed} fichier(s) lu(s) et stocké(s) en base sur ${result.totalMatchingFiles} fichier(s) pertinent(s) trouvé(s)${
-            result.filesSkippedByLimit > 0
-              ? ` (${result.filesSkippedByLimit} fichier(s) supplémentaire(s) ignoré(s), limite atteinte — les fichiers les plus proches de la racine ont été priorisés)`
-              : ''
-          }. Utilise list_indexed_project_files pour voir la liste, puis read_indexed_project_file pour lire le contenu d'un fichier précis.`,
+          message: `${result.filesIndexed} fichier(s) lu(s) et stocké(s) en base lors de cette vague (${result.filesAlreadyIndexed} déjà indexés précédemment, ${result.totalMatchingFiles} fichier(s) pertinent(s) au total).${
+            result.complete
+              ? ' Indexation complète — tous les fichiers pertinents sont maintenant stockés.'
+              : ` ${result.filesRemaining} fichier(s) restent à indexer — rappelle analyze_github_project avec le même owner/repo/branch pour continuer.`
+          } Utilise list_indexed_project_files pour voir la liste, puis read_indexed_project_file pour lire le contenu d'un fichier précis.`,
           ...result,
         };
       },
