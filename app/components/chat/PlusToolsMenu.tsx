@@ -12,6 +12,7 @@ import {
   type ConnectedAccountsStatus,
 } from '~/lib/hooks/useConnectedAccounts.client';
 import { useDeployToGitHub, loadSelectedRepo, type SelectedRepo } from '~/lib/hooks/useDeployToGitHub.client';
+import { ProjectIndexPanel } from './ProjectIndexPanel';
 import type { DesignScheme } from '~/types/design-scheme';
 
 const PROVIDER_LABELS: Record<OAuthProviderId, string> = {
@@ -318,6 +319,7 @@ export function PlusToolsMenu(props: PlusToolsMenuProps) {
   const [open, setOpen] = useState(false);
   const [connectorsOpen, setConnectorsOpen] = useState(false);
   const [deployOpen, setDeployOpen] = useState(false);
+  const [analyzeOpen, setAnalyzeOpen] = useState(false);
   const menuRef = useRef<HTMLDivElement>(null);
   const {
     status: connectedStatus,
@@ -453,6 +455,25 @@ export function PlusToolsMenu(props: PlusToolsMenuProps) {
               {deployOpen && <DeployPanel onClose={close} />}
             </>
           )}
+
+          <div className="h-px bg-bolt-elements-borderColor my-1 mx-2" />
+
+          <button
+            type="button"
+            className="flex items-center gap-2.5 px-3 py-2 text-sm text-bolt-elements-textPrimary hover:bg-bolt-elements-item-backgroundActive rounded-md mx-1"
+            onClick={() => setAnalyzeOpen((v) => !v)}
+          >
+            <div className="i-ph:magnifying-glass text-lg" />
+            <span>Analyser un dépôt</span>
+            <div
+              className={classNames(
+                'i-ph:caret-down text-sm ml-auto transition-transform',
+                analyzeOpen ? 'rotate-180' : '',
+              )}
+            />
+          </button>
+
+          {analyzeOpen && <ProjectIndexPanel />}
 
           <div className="h-px bg-bolt-elements-borderColor my-1 mx-2" />
 
