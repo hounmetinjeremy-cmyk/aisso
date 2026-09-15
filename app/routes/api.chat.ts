@@ -99,6 +99,7 @@ async function chatAction({ context, request }: ActionFunctionArgs) {
           supabase: supabaseAdmin,
           userId,
           githubToken,
+          mcpTools: mcpService.tools,
           writer,
           nextProgressOrder: () => progressCounter++,
         });

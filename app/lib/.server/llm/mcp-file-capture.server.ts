@@ -18,7 +18,7 @@ import type { SupabaseClient } from '@supabase/supabase-js';
  * quoi sous un mauvais chemin — ne doit jamais faire échouer le tour de chat.
  */
 
-const FILE_READ_TOOL_NAME_PATTERN = /get[_-]?file[_-]?contents?|read[_-]?file|file[_-]?content|get[_-]?blob/i;
+export const FILE_READ_TOOL_NAME_PATTERN = /get[_-]?file[_-]?contents?|read[_-]?file|file[_-]?content|get[_-]?blob/i;
 
 function pickString(obj: Record<string, unknown>, keys: string[]): string | undefined {
   for (const key of keys) {
