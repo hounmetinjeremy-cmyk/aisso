@@ -22,7 +22,18 @@ import { Browser } from '@capacitor/browser';
 
 const MCP_OAUTH_STATE_KEY = 'mcp_oauth_pending';
 const MCP_OAUTH_TOKENS_KEY = 'mcp_oauth_tokens';
-const FETCH_TIMEOUT_MS = 8000;
+
+/*
+ * Découverte OAuth (RFC 9728/8414) + DCR (RFC 7591) sont optionnelles — la
+ * quasi-totalité des serveurs MCP distants (ex: remote-mcp-github-oauth,
+ * gabarit Cloudflare workers-oauth-provider) n'implémentent PAS ces
+ * endpoints "bien connus" et retombent directement sur /authorize, /token,
+ * /register. À 8s de timeout par tentative, l'utilisateur attendait jusqu'à
+ * ~24s (2 échecs de découverte + DCR) avant de voir la moindre page —
+ * perçu comme un blocage complet. 2.5s suffit largement pour un fetch JSON
+ * qui répond ou échoue en local/edge, et ramène le pire cas à ~7.5s.
+ */
+const FETCH_TIMEOUT_MS = 2500;
 
 /** Rafraîchir un peu avant l'expiration réelle pour éviter les 401 en bordure. */
 const REFRESH_SKEW_MS = 60_000;
