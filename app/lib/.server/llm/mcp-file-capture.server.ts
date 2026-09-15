@@ -1,4 +1,5 @@
 import type { SupabaseClient } from '@supabase/supabase-js';
+import { extractMcpFileContent } from './mcp-content-parsing.server';
 
 /**
  * Quand aucune connexion GitHub "app" n'existe (voir project-index-tools.ts),
@@ -30,17 +31,6 @@ function pickString(obj: Record<string, unknown>, keys: string[]): string | unde
   }
 
   return undefined;
-}
-
-function decodeBase64(base64: string): string {
-  const binary = atob(base64.replace(/\n/g, ''));
-  const bytes = new Uint8Array(binary.length);
-
-  for (let i = 0; i < binary.length; i++) {
-    bytes[i] = binary.charCodeAt(i);
-  }
-
-  return new TextDecoder('utf-8', { fatal: true }).decode(bytes);
 }
 
 export interface McpCapturedFile {
@@ -95,35 +85,13 @@ export function tryExtractMcpFileRead(toolName: string, input: unknown, output: 
 
     const branch = pickString(inputObj, ['branch', 'ref']) ?? 'main';
 
-    // Le résultat peut être une simple chaîne, ou un objet à la forme de l'API GitHub ({content, encoding}).
-    let content: string | undefined;
-    let isBinary = false;
+    const extracted = extractMcpFileContent(output);
 
-    if (typeof output === 'string') {
-      content = output;
-    } else if (typeof output === 'object' && output !== null) {
-      const outputObj = output as Record<string, unknown>;
-      const raw = pickString(outputObj, ['content', 'text', 'data']);
-
-      if (raw) {
-        if (outputObj.encoding === 'base64') {
-          try {
-            content = decodeBase64(raw);
-          } catch {
-            content = raw;
-            isBinary = true;
-          }
-        } else {
-          content = raw;
-        }
-      }
-    }
-
-    if (!content) {
+    if (!extracted) {
       return null;
     }
 
-    return { owner: owner ?? repo, repo, branch, path, content, isBinary };
+    return { owner: owner ?? repo, repo, branch, path, content: extracted.content, isBinary: extracted.isBinary };
   } catch {
     return null;
   }

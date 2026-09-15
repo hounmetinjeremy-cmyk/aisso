@@ -78,30 +78,54 @@ export function buildProjectIndexTools(params: {
           });
         };
 
-        const result =
-          githubToken && supabase
-            ? await indexGithubProjectSequential(supabase, userId, githubToken, { owner, repo, branch }, onProgress)
-            : await indexGithubProjectViaMcp(supabase, userId, callMcpTool!, { owner, repo, branch }, onProgress);
+        /*
+         * Un aller-retour réseau tiers (GitHub, ou un serveur MCP hors de
+         * notre contrôle) sur des centaines de fichiers a forcément un point
+         * d'échec possible quelque part — ne jamais laisser une exception ici
+         * remonter et casser tout le tour de chat, renvoyer une erreur lisible
+         * au modèle à la place.
+         */
+        try {
+          const result =
+            githubToken && supabase
+              ? await indexGithubProjectSequential(supabase, userId, githubToken, { owner, repo, branch }, onProgress)
+              : await indexGithubProjectViaMcp(supabase, userId, callMcpTool!, { owner, repo, branch }, onProgress);
 
-        writer?.write({
-          type: 'data-progress',
-          data: {
-            type: 'progress',
-            label: 'project-index',
-            status: 'complete',
-            order: nextProgressOrder?.() ?? 0,
-            message: `Analyse du projet terminée : ${result.filesIndexed} fichier(s) indexé(s).`,
-          } satisfies ProgressAnnotation,
-        });
+          writer?.write({
+            type: 'data-progress',
+            data: {
+              type: 'progress',
+              label: 'project-index',
+              status: 'complete',
+              order: nextProgressOrder?.() ?? 0,
+              message: `Analyse du projet terminée : ${result.filesIndexed} fichier(s) indexé(s).`,
+            } satisfies ProgressAnnotation,
+          });
 
-        return {
-          message: `${result.filesIndexed} fichier(s) lu(s) et stocké(s) en base (${result.filesAlreadyIndexed} déjà indexés précédemment, ${result.totalMatchingFiles} fichier(s) pertinent(s) au total).${
-            result.complete
-              ? ' Indexation complète — tous les fichiers pertinents sont maintenant stockés.'
-              : ` Dépôt exceptionnellement volumineux : ${result.filesRemaining} fichier(s) restent à indexer — rappelle analyze_github_project avec le même owner/repo/branch pour continuer.`
-          } Utilise list_indexed_project_files pour voir la liste, puis read_indexed_project_file pour lire le contenu d'un fichier précis.`,
-          ...result,
-        };
+          return {
+            message: `${result.filesIndexed} fichier(s) lu(s) et stocké(s) en base (${result.filesAlreadyIndexed} déjà indexés précédemment, ${result.totalMatchingFiles} fichier(s) pertinent(s) au total).${
+              result.complete
+                ? ' Indexation complète — tous les fichiers pertinents sont maintenant stockés.'
+                : ` Dépôt exceptionnellement volumineux : ${result.filesRemaining} fichier(s) restent à indexer — rappelle analyze_github_project avec le même owner/repo/branch pour continuer.`
+            } Utilise list_indexed_project_files pour voir la liste, puis read_indexed_project_file pour lire le contenu d'un fichier précis.`,
+            ...result,
+          };
+        } catch (error) {
+          writer?.write({
+            type: 'data-progress',
+            data: {
+              type: 'progress',
+              label: 'project-index',
+              status: 'error',
+              order: nextProgressOrder?.() ?? 0,
+              message: "Échec de l'analyse du projet.",
+            } satisfies ProgressAnnotation,
+          });
+
+          return {
+            message: `L'indexation a échoué : ${error instanceof Error ? error.message : 'erreur inconnue'}. Le dépôt/la branche existe-t-il bien ? Réessaie, ou explore le projet via les outils MCP disponibles en attendant.`,
+          };
+        }
       },
     }),
     list_indexed_project_files: tool({

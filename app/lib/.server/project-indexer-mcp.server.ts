@@ -2,6 +2,7 @@ import type { SupabaseClient } from '@supabase/supabase-js';
 import ignore from 'ignore';
 import { readFilesOneByOne, type SequentialProgress } from '~/lib/utils/sequential-file-reader';
 import { IGNORE_PATTERNS } from './llm/constants';
+import { extractMcpText, extractMcpFileContent } from './llm/mcp-content-parsing.server';
 import { listIndexedFilePaths, type IndexProjectParams } from './project-indexer.server';
 
 /**
@@ -44,17 +45,50 @@ interface McpTreeEntry {
 }
 
 function normalizeDirPath(path: string): string {
-  return path.replace(/^\/+/, '');
+  return path.replace(/^\.?\/+/, '').replace(/^\.+$/, '');
+}
+
+/*
+ * Le paquet `ignore` lève une exception si le chemin n'est pas exactement
+ * relatif (voir sa regex interne) — un chemin renvoyé par un serveur MCP
+ * tiers dans une forme inattendue (vide, absolu, ".", etc.) ne doit jamais
+ * faire planter toute l'indexation : en cas de doute, on considère juste le
+ * fichier comme NON ignoré (fail-open) plutôt que de laisser l'exception remonter.
+ */
+function isIgnoredSafe(ig: ReturnType<typeof ignore>, relativePath: string): boolean {
+  if (!relativePath) {
+    return false;
+  }
+
+  try {
+    return ig.ignores(relativePath);
+  } catch {
+    return false;
+  }
 }
 
 function parseDirectoryListing(raw: unknown): McpTreeEntry[] | null {
-  if (!Array.isArray(raw)) {
+  const text = extractMcpText(raw);
+
+  if (text === null) {
+    return null;
+  }
+
+  let parsed: unknown;
+
+  try {
+    parsed = JSON.parse(text);
+  } catch {
+    return null;
+  }
+
+  if (!Array.isArray(parsed)) {
     return null;
   }
 
   const entries: McpTreeEntry[] = [];
 
-  for (const item of raw) {
+  for (const item of parsed) {
     if (typeof item !== 'object' || item === null) {
       continue;
     }
@@ -72,45 +106,6 @@ function parseDirectoryListing(raw: unknown): McpTreeEntry[] | null {
   }
 
   return entries;
-}
-
-function decodeBase64(base64: string): string {
-  const binary = atob(base64.replace(/\n/g, ''));
-  const bytes = new Uint8Array(binary.length);
-
-  for (let i = 0; i < binary.length; i++) {
-    bytes[i] = binary.charCodeAt(i);
-  }
-
-  return new TextDecoder('utf-8', { fatal: true }).decode(bytes);
-}
-
-function extractFileContent(raw: unknown): { content: string; isBinary: boolean } | null {
-  if (typeof raw === 'string') {
-    return { content: raw, isBinary: false };
-  }
-
-  if (typeof raw !== 'object' || raw === null) {
-    return null;
-  }
-
-  const obj = raw as Record<string, unknown>;
-  const rawContent =
-    typeof obj.content === 'string' ? obj.content : typeof obj.text === 'string' ? obj.text : undefined;
-
-  if (!rawContent) {
-    return null;
-  }
-
-  if (obj.encoding === 'base64') {
-    try {
-      return { content: decodeBase64(rawContent), isBinary: false };
-    } catch {
-      return { content: rawContent, isBinary: true };
-    }
-  }
-
-  return { content: rawContent, isBinary: false };
 }
 
 export interface IndexViaMcpResult {
@@ -158,7 +153,7 @@ export async function indexGithubProjectViaMcp(
     for (const entry of entries) {
       const relativePath = normalizeDirPath(entry.path);
 
-      if (relativePath && ig.ignores(relativePath)) {
+      if (isIgnoredSafe(ig, relativePath)) {
         continue;
       }
 
@@ -189,7 +184,7 @@ export async function indexGithubProjectViaMcp(
     filesToIndex.map((file) => ({ path: file.path })),
     async (file) => {
       const raw = await callTool({ owner, repo, path: file.path, ref: branch });
-      const parsed = extractFileContent(raw);
+      const parsed = extractMcpFileContent(raw);
 
       if (!parsed) {
         throw new Error(`Contenu illisible : ${file.path}`);
