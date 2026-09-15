@@ -39,6 +39,16 @@ interface BaseChatProps {
   isStreaming?: boolean;
   onStreamingChange?: (streaming: boolean) => void;
   messages?: UIMessage[];
+
+  /**
+   * Texte assistant déjà passé par EnhancedStreamingMessageParser — placeholders
+   * d'artefacts substitués, balises <boltArtifact>/<boltAction> retirées. Sans
+   * ça, Messages.client.tsx recalculerait le texte brut depuis message.parts
+   * (balises encore présentes), que react-markdown supprime en bloc tant que
+   * l'élément inconnu <boltArtifact> reste ouvert — d'où un message qui
+   * semble ne s'afficher qu'une fois un fichier créé (balise refermée).
+   */
+  parsedMessages?: { [key: number]: string };
   description?: string;
   enhancingPrompt?: boolean;
   promptEnhanced?: boolean;
@@ -102,6 +112,7 @@ export const BaseChat = React.forwardRef<HTMLDivElement, BaseChatProps>(
       imageDataList = [],
       setImageDataList,
       messages,
+      parsedMessages,
       actionAlert,
       clearAlert,
       deployAlert,
@@ -358,6 +369,7 @@ export const BaseChat = React.forwardRef<HTMLDivElement, BaseChatProps>(
                       <Messages
                         className="flex flex-col w-full flex-1 max-w-chat pb-4 mx-auto z-1"
                         messages={messages}
+                        parsedMessages={parsedMessages}
                         isStreaming={isStreaming}
                         append={append}
                         chatMode={chatMode}

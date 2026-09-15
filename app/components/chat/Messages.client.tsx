@@ -17,6 +17,9 @@ interface MessagesProps {
   className?: string;
   isStreaming?: boolean;
   messages?: UIMessage[];
+
+  /** Texte assistant déjà nettoyé des balises <boltArtifact>/<boltAction> — voir BaseChat.tsx. */
+  parsedMessages?: { [key: number]: string };
   append?: (message: AppendMessage) => void;
   chatMode?: 'discuss' | 'build';
   setChatMode?: (mode: 'discuss' | 'build') => void;
@@ -26,7 +29,7 @@ interface MessagesProps {
 
 export const Messages = forwardRef<HTMLDivElement, MessagesProps>(
   (props: MessagesProps, ref: ForwardedRef<HTMLDivElement> | undefined) => {
-    const { id, isStreaming = false, messages = [] } = props;
+    const { id, isStreaming = false, messages = [], parsedMessages } = props;
     const location = useLocation();
 
     const handleRewind = (messageId: string) => {
@@ -62,10 +65,20 @@ export const Messages = forwardRef<HTMLDivElement, MessagesProps>(
                 return <Fragment key={index} />;
               }
 
-              const content = (parts ?? [])
+              /*
+               * Pour l'assistant, le texte brut (parts) contient encore les
+               * balises <boltArtifact>/<boltAction> — react-markdown les
+               * traite comme un élément HTML inconnu et supprime tout le
+               * sous-arbre (donc le message entier) tant que la balise n'est
+               * pas refermée. parsedMessages (EnhancedStreamingMessageParser,
+               * voir useMessageParser.ts) a déjà substitué ces balises par un
+               * placeholder inerte — c'est lui qu'il faut afficher.
+               */
+              const rawContent = (parts ?? [])
                 .filter((part) => part.type === 'text')
                 .map((part) => part.text)
                 .join('');
+              const content = role === 'assistant' ? (parsedMessages?.[index] ?? rawContent) : rawContent;
 
               return (
                 <div
