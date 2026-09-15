@@ -182,7 +182,7 @@ async function chatAction({ context, request }: ActionFunctionArgs) {
 
     return createUIMessageStreamResponse({ stream });
   } catch (error: any) {
-    logger.error(error);
+    logger.error('chatAction failed', error?.stack || error);
 
     if (error.message?.includes('API key')) {
       throw new Response('Invalid or missing API key', {
@@ -191,7 +191,13 @@ async function chatAction({ context, request }: ActionFunctionArgs) {
       });
     }
 
-    throw new Response(null, {
+    /*
+     * Un corps vide (null) forçait l'UI à afficher un générique "An error
+     * occurred" sans aucun indice sur la vraie cause — impossible à
+     * diagnostiquer depuis les captures d'écran de l'utilisateur. On
+     * remonte donc le vrai message ici.
+     */
+    throw new Response(error?.message || 'Internal Server Error', {
       status: 500,
       statusText: 'Internal Server Error',
     });
