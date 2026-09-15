@@ -28,3 +28,19 @@ export async function getGithubConnectionStatus(env: Env, userId: string | null)
     username: (data?.github_username as string | undefined) ?? null,
   };
 }
+
+/** Jeton GitHub brut de l'utilisateur — usage serveur uniquement (voir project-indexer.server.ts). */
+export async function getGithubAccessToken(env: Env, userId: string | null): Promise<string | null> {
+  if (!userId || !env.SUPABASE_SERVICE_ROLE_KEY) {
+    return null;
+  }
+
+  const supabase = getSupabaseAdmin(env.SUPABASE_SERVICE_ROLE_KEY);
+  const { data } = await supabase
+    .from('connected_accounts')
+    .select('github_access_token')
+    .eq('user_id', userId)
+    .maybeSingle();
+
+  return (data?.github_access_token as string | undefined) ?? null;
+}

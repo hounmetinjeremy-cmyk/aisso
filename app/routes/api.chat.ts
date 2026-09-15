@@ -7,8 +7,10 @@ import { type FileMap } from '~/lib/stores/files';
 import type { ProgressAnnotation } from '~/types/context';
 import type { DesignScheme } from '~/types/design-scheme';
 import { MCPService, type MCPConfig } from '~/lib/services/mcpService';
-import { getGithubConnectionStatus } from '~/lib/.server/llm/github-tools';
+import { getGithubConnectionStatus, getGithubAccessToken } from '~/lib/.server/llm/github-tools';
+import { buildProjectIndexTools } from '~/lib/.server/llm/project-index-tools';
 import { verifyFirebaseIdToken } from '~/lib/firebase-verify.server';
+import { getSupabaseAdmin } from '~/lib/supabase-admin.server';
 
 const logger = createScopedLogger('api.chat');
 
@@ -58,10 +60,21 @@ async function chatAction({ context, request }: ActionFunctionArgs) {
     const idToken = authHeader?.startsWith('Bearer ') ? authHeader.slice('Bearer '.length) : null;
     const userId = await verifyFirebaseIdToken(idToken).catch(() => null);
 
-    const githubConnection = await getGithubConnectionStatus(context.cloudflare?.env as any, userId).catch(() => ({
-      isConnected: false,
-      username: null as string | null,
-    }));
+    const env = context.cloudflare?.env as Env | undefined;
+
+    const [githubConnection, githubToken] = await Promise.all([
+      getGithubConnectionStatus(env as any, userId).catch(() => ({
+        isConnected: false,
+        username: null as string | null,
+      })),
+      getGithubAccessToken(env as any, userId).catch(() => null),
+    ]);
+
+    const projectIndexTools = buildProjectIndexTools({
+      supabase: env?.SUPABASE_SERVICE_ROLE_KEY ? getSupabaseAdmin(env.SUPABASE_SERVICE_ROLE_KEY) : null,
+      userId,
+      githubToken,
+    });
 
     const stream = createUIMessageStream({
       execute: async ({ writer }) => {
@@ -92,8 +105,8 @@ async function chatAction({ context, request }: ActionFunctionArgs) {
           githubConnection,
           toolChoice: 'auto' as const,
 
-          // Exécution serveur directe des outils MCP (résultat réel, pas "Yes, approved.")
-          tools: mcpService.tools,
+          // Exécution serveur directe des outils MCP (résultat réel, pas "Yes, approved.") + indexation projet
+          tools: { ...mcpService.tools, ...projectIndexTools },
           stopWhen: stepCountIs(maxSteps),
           onStepFinish: ({ toolCalls }: { toolCalls: any[] }) => {
             toolCalls.forEach((toolCall) => {
