@@ -4,15 +4,15 @@ import { ConfirmationDialog, SelectionDialog } from '~/components/ui/Dialog';
 import { Card, CardHeader, CardTitle, CardDescription, CardContent, CardFooter } from '~/components/ui/Card';
 import { motion } from 'framer-motion';
 import { useDataOperations } from '~/lib/hooks/useDataOperations';
-import { openDatabase } from '~/lib/persistence/db';
+import { openDatabase, type PersistenceHandle } from '~/lib/persistence/db';
 import { getAllChats, type Chat } from '~/lib/persistence/chats';
 import { DataVisualization } from './DataVisualization';
 import { classNames } from '~/utils/classNames';
 import { toast } from 'react-toastify';
 
-// Create a custom hook to connect to the boltHistory database
+// Create a custom hook to connect to l'historique des conversations (Supabase, voir db.ts)
 function useBoltHistoryDB() {
-  const [db, setDb] = useState<IDBDatabase | null>(null);
+  const [db, setDb] = useState<PersistenceHandle | null>(null);
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState<Error | null>(null);
 
@@ -31,12 +31,6 @@ function useBoltHistoryDB() {
     };
 
     initDB();
-
-    return () => {
-      if (db) {
-        db.close();
-      }
-    };
   }, []);
 
   return { db, isLoading, error };
@@ -141,12 +135,6 @@ export function DataTab() {
   // Load available chats
   useEffect(() => {
     if (db) {
-      console.log('Loading chats from boltHistory database', {
-        name: db.name,
-        version: db.version,
-        objectStoreNames: Array.from(db.objectStoreNames),
-      });
-
       getAllChats(db)
         .then((chats) => {
           console.log('Found chats:', chats.length);
@@ -308,12 +296,6 @@ export function DataTab() {
                           toast.error('Database not available');
                           return;
                         }
-
-                        console.log('Database information:', {
-                          name: db.name,
-                          version: db.version,
-                          objectStoreNames: Array.from(db.objectStoreNames),
-                        });
 
                         if (availableChats.length === 0) {
                           toast.warning('No chats available to export');
