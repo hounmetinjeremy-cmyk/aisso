@@ -11,7 +11,14 @@ type MCPSettings = {
 };
 
 const defaultSettings = {
-  maxLLMSteps: 5,
+  /*
+   * Comprendre un projet en profondeur via des lectures MCP fichier par
+   * fichier (quand analyze_github_project n'est pas disponible) prend
+   * facilement plus de 5 appels d'outils (lister + lire chaque fichier) —
+   * avec 5, le modèle était coupé après 3-4 fichiers et finissait par
+   * demander "veux-tu que je continue ?" au lieu de simplement continuer.
+   */
+  maxLLMSteps: 20,
   mcpConfig: {
     mcpServers: {},
   },

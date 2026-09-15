@@ -15,7 +15,7 @@ export default function McpTab() {
   const checkServersAvailabilities = useMCPStore((state) => state.checkServersAvailabilities);
 
   const [isSaving, setIsSaving] = useState(false);
-  const [maxLLMSteps, setMaxLLMSteps] = useState(5);
+  const [maxLLMSteps, setMaxLLMSteps] = useState(20);
   const [error, setError] = useState<string | null>(null);
   const [isCheckingServers, setIsCheckingServers] = useState(false);
   const [expandedServer, setExpandedServer] = useState<string | null>(null);
