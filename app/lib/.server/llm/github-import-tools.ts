@@ -167,7 +167,7 @@ export function buildGithubImportTools(params: {
           };
         } catch (error) {
           return {
-            message: `Échec de l'import de ${owner}/${repo}@${branch} : ${error instanceof Error ? error.message : 'erreur inconnue'}. Vérifie le owner/repo/branch${githubToken ? ' (utilise list_my_github_repos)' : ''}, ou dis à l'utilisateur d'utiliser le bouton "Importer" manuel.`,
+            message: `Échec de l'import de ${owner}/${repo}@${branch} : ${error instanceof Error ? error.message : 'erreur inconnue'}. Vérifie le owner/repo/branch${githubToken ? ' (utilise list_my_github_repos)' : ''} et éventuellement réessaie. Si ça échoue à nouveau, propose à l'utilisateur le bouton d'action rapide décrit dans tes instructions système (<button data-bolt-quick-action="true" data-type="link" data-href="/select-repo">) au lieu d'une simple phrase — il pourra importer lui-même en un clic.`,
           };
         }
       },

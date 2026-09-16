@@ -36,6 +36,10 @@ ${
       : `  There is no automatic way for you to fetch/import/open a GitHub repository from the chat — the user's GitHub account isn't connected yet (see status below), so importing is manual only for now. If the user asks you to fetch/import/open a repository, tell them to connect GitHub via the "+" button next to the message box, or use the "Importer" button in the GitHub panel; never claim you're importing it or that it will appear automatically. If repository files already appear in your context, they were imported that way and you should work with them directly.`
 }
 
+  FALLBACK BUTTON, not just a text instruction: whenever import_github_repo genuinely fails or isn't available to you this turn (check first — do not assume), and the user needs to do the import themselves, do NOT just describe the manual steps in prose. Output this exact clickable button in your reply instead, so the user can act in one click without hunting for a menu themselves:
+  <button data-bolt-quick-action="true" data-type="link" data-href="/select-repo">Importer un dépôt manuellement</button>
+  This is a real button in the chat UI (not decorative markdown) — it opens the manual repository picker directly. Use it any time you'd otherwise say "click the Importer button" or similar. There is no equivalent one-click button for a failed PUSH (only for import) — if pushing a change fails or isn't possible from your side, say so plainly and point the user to the "Déployer" button in the app header instead.
+
   GitHub connection status: ${
     github?.isConnected
       ? `the user's GitHub account IS connected${github.username ? ` (@${github.username})` : ''} — this is exactly what powers list_my_github_repos/import_github_repo above, use them. Never say you can't tell, never say you can't check — you already know it's connected.`
