@@ -125,6 +125,51 @@ export function buildVercelTools(params: {
       },
     }),
 
+    link_github_repo_to_vercel: tool({
+      description:
+        "Lie un dépôt GitHub EXISTANT à un NOUVEAU projet Vercel via la vraie intégration Git de Vercel — c'est ce qui fait qu'ENSUITE, chaque push GitHub déclenche automatiquement un déploiement Vercel tout seul, sans jamais rappeler deploy_to_vercel. Utilise ceci une fois, quand l'utilisateur veut connecter/lier son dépôt GitHub à Vercel (pas juste déployer les fichiers actuels). Nécessite que Vercel ait déjà accès à ce dépôt sur GitHub (l'app GitHub de Vercel doit être installée/autorisée pour ce dépôt côté vercel.com/github.com — un préalable externe qu'aucun jeton API ne peut contourner) ; si l'appel échoue pour cette raison, dis-le clairement à l'utilisateur au lieu de réessayer en boucle.",
+      inputSchema: z.object({
+        owner: z.string().describe('Propriétaire du dépôt GitHub (utilisateur ou organisation)'),
+        repo: z.string().describe('Nom du dépôt GitHub'),
+        name: z.string().optional().describe('Nom du projet Vercel à créer — omis = utilise le nom du dépôt GitHub'),
+      }),
+      execute: async ({ owner, repo, name }) => {
+        try {
+          const res = await fetch('https://api.vercel.com/v9/projects', {
+            method: 'POST',
+            headers: vercelHeaders,
+            body: JSON.stringify({
+              name: name ?? repo,
+              gitRepository: { type: 'github', repo: `${owner}/${repo}` },
+            }),
+          });
+
+          const data = await res.json<{ id?: string; name?: string; error?: { message?: string; code?: string } }>();
+
+          if (!res.ok || !data.id) {
+            const rawMessage = data.error?.message ?? `HTTP ${res.status}`;
+            const looksLikeAccessIssue = /reposit|permission|access|not found|introuvable/i.test(rawMessage);
+
+            return {
+              message: looksLikeAccessIssue
+                ? `Vercel n'a pas accès à "${owner}/${repo}" (${rawMessage}). Ce n'est pas quelque chose qu'un jeton API peut résoudre : sur vercel.com, l'utilisateur doit d'abord autoriser l'app GitHub de Vercel pour ce dépôt précis (Vercel > Add New Project > sélectionner le dépôt, ou depuis les paramètres d'intégration GitHub de Vercel). Explique ça clairement à l'utilisateur au lieu de réessayer.`
+                : `Échec de la liaison GitHub → Vercel : ${rawMessage}`,
+            };
+          }
+
+          return {
+            projectId: data.id,
+            projectName: data.name,
+            message: `Dépôt "${owner}/${repo}" lié avec succès au nouveau projet Vercel "${data.name}" (id ${data.id}). Chaque futur push sur ce dépôt déclenchera maintenant un déploiement Vercel automatique — plus besoin de deploy_to_vercel pour ce projet, juste get_vercel_deployment_status pour vérifier après un push.`,
+          };
+        } catch (error) {
+          return {
+            message: `Échec de l'appel à l'API Vercel : ${error instanceof Error ? error.message : 'erreur inconnue'}`,
+          };
+        }
+      },
+    }),
+
     deploy_to_vercel: tool({
       description:
         "Déploie RÉELLEMENT le projet actuel (les vrais fichiers de l'éditeur) sur Vercel, pour de vrai — utile quand le dépôt GitHub de l'utilisateur n'est PAS lié à Vercel (sinon un simple push suffit déjà à déclencher un déploiement automatique, préfère laisser faire ça et vérifier avec get_vercel_deployment_status). Envoie tous les fichiers source à Vercel qui les build lui-même. Peut prendre jusqu'à 2 minutes (attend que le déploiement soit prêt avant de répondre).",
