@@ -108,10 +108,20 @@ async function chatAction({ context, request }: ActionFunctionArgs) {
         /*
          * Uniquement en mode "build" (éditeur/boltArtifact) : permet au modèle
          * d'ouvrir lui-même un dépôt GitHub existant déjà connecté (bouton
-         * "GitHub" du "+"), au lieu de renvoyer systématiquement l'utilisateur
-         * vers l'import manuel — voir github-import-tools.ts.
+         * "GitHub" du "+" OU, à défaut, un serveur MCP donnant accès au
+         * contenu des fichiers), au lieu de renvoyer systématiquement
+         * l'utilisateur vers l'import manuel — voir github-import-tools.ts.
          */
-        const githubImportTools = chatMode === 'build' ? buildGithubImportTools({ githubToken, writer }) : {};
+        const githubImportTools =
+          chatMode === 'build'
+            ? buildGithubImportTools({
+                githubToken,
+                writer,
+                mcpTools: mcpService.tools,
+                supabase: supabaseAdmin,
+                userId,
+              })
+            : {};
 
         const processedMessages = await mcpService.processToolInvocations(messages, writer);
 

@@ -194,8 +194,14 @@ export const ChatImpl = memo(
            * silencieux : aucun push, aucune erreur, l'utilisateur découvrait
            * un dépôt vide bien plus tard sans aucun indice.
            */
+          const hasMcpServersConfigured = Object.keys(mcpSettings.mcpConfig?.mcpServers ?? {}).length > 0;
+
           toast.warning(
-            `${touchedFiles.length} fichier${touchedFiles.length > 1 ? 's' : ''} modifié${touchedFiles.length > 1 ? 's' : ''}, mais aucun dépôt GitHub choisi pour cette conversation — utilise le bouton Déployer pour en choisir un avant que les changements soient poussés.`,
+            `${touchedFiles.length} fichier${touchedFiles.length > 1 ? 's' : ''} modifié${touchedFiles.length > 1 ? 's' : ''}, mais aucun dépôt GitHub choisi pour cette conversation — ce push automatique ne s'applique qu'à la connexion GitHub "app" (bouton Déployer). ${
+              hasMcpServersConfigured
+                ? "Si tu comptes sur ton serveur MCP pour pousser, vérifie dans la réponse que l'IA a bien appelé son outil d'écriture GitHub."
+                : 'Utilise le bouton Déployer pour choisir un dépôt.'
+            }`,
           );
 
           return;
@@ -212,7 +218,7 @@ export const ChatImpl = memo(
         logger.error('Auto-push GitHub failed', error);
         toast.error('Le push automatique vers GitHub a échoué.');
       }
-    }, [deployToGitHub]);
+    }, [deployToGitHub, mcpSettings]);
 
     const [input, setInput] = useState(Cookies.get(PROMPT_COOKIE_KEY) || '');
     const [chatData, setChatData] = useState<unknown[]>([]);

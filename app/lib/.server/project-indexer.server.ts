@@ -167,6 +167,35 @@ export async function listIndexedFilePaths(
   return (data ?? []).map((row) => row.path as string);
 }
 
+/**
+ * Lit le contenu déjà indexé de TOUS les fichiers d'un dépôt en un seul
+ * appel (path + content + is_binary) — utilisé pour faire apparaître un
+ * dépôt importé via MCP (voir github-import-tools.ts) directement dans
+ * l'éditeur, sans re-router chaque fichier un par un.
+ */
+export async function readAllIndexedFiles(
+  supabase: SupabaseClient,
+  userId: string,
+  params: IndexProjectParams,
+): Promise<IndexedFileRow[]> {
+  const { owner, repo, branch } = params;
+
+  const { data, error } = await supabase
+    .from('project_file_index')
+    .select('path, content, is_binary, size, indexed_at')
+    .eq('user_id', userId)
+    .eq('owner', owner)
+    .eq('repo', repo)
+    .eq('branch', branch)
+    .order('path', { ascending: true });
+
+  if (error) {
+    throw new Error(`Impossible de lire les fichiers indexés : ${error.message}`);
+  }
+
+  return (data ?? []) as IndexedFileRow[];
+}
+
 /** Lit le contenu déjà indexé d'un seul fichier (depuis Supabase, pas GitHub). */
 export async function readIndexedFile(
   supabase: SupabaseClient,
