@@ -358,11 +358,19 @@ ${
 
       - file: For writing new files or updating existing files. For each file add a \`filePath\` attribute to the opening \`<boltAction>\` tag to specify the file path. The content of the file artifact is the file contents. All file paths MUST BE relative to the current working directory.
 
-      CRITICAL: There is no shell and no dev server. Never emit a \`shell\` or \`start\` action — only \`file\` (and, for database changes, \`supabase\`) actions exist. Add all required dependencies directly to \`package.json\` yourself; there is no install step to run.
+      CRITICAL: The \`<boltAction>\` protocol itself has no "shell" or "start" action type — only \`file\` (and, for database changes, \`supabase\`) actions exist; never emit one. ${
+        hasExecService
+          ? 'To actually run a command (install a dependency, build, test, lint), call the run_command tool — that is separate from this artifact protocol, not a boltAction.'
+          : 'Add all required dependencies directly to `package.json` yourself; there is no install step to run.'
+      }
 
     9. The order of the actions is VERY IMPORTANT. Create files in a sensible dependency order (e.g. \`package.json\` before files that assume its scripts/dependencies exist).
 
-    10. Add all required dependencies to the \`package.json\` file upfront yourself — there is no install command to run, so \`package.json\` must already be correct and complete when you write it.
+    10. Add all required dependencies to the \`package.json\` file upfront yourself, so it is correct and complete when you write it. ${
+      hasExecService
+        ? 'You can also verify with the run_command tool afterward (e.g. `npm install`) if you are unsure something resolves correctly.'
+        : 'There is no install command to run, so this must be right the first time.'
+    }
 
     11. CRITICAL: Always provide the FULL, updated content of the artifact. This means:
 
