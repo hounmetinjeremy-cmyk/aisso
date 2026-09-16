@@ -30,7 +30,7 @@ import { useMCPStore } from '~/lib/stores/mcp';
 import type { AppendMessage } from './appendMessage';
 import type { LlmErrorAlertType } from '~/types/actions';
 import { useAuth } from '~/lib/hooks/useAuth.client';
-import { loadSelectedRepo, useDeployToGitHub } from '~/lib/hooks/useDeployToGitHub.client';
+import { loadSelectedRepo, saveSelectedRepo, useDeployToGitHub } from '~/lib/hooks/useDeployToGitHub.client';
 
 const logger = createScopedLogger('Chat');
 
@@ -285,7 +285,10 @@ export const ChatImpl = memo(
          * fois, jamais retapé.
          */
         if ((dataPart as any).type === 'data-import-files') {
-          const { files } = (dataPart as any).data as {
+          const { owner, repo, branch, files } = (dataPart as any).data as {
+            owner: string;
+            repo: string;
+            branch: string;
             files: { path: string; content: string; isBinary?: boolean }[];
           };
 
@@ -293,6 +296,15 @@ export const ChatImpl = memo(
             files.map((file) => ({ path: `${WORK_DIR}/${file.path}`, content: file.content, isBinary: file.isBinary })),
             'import',
           );
+
+          /*
+           * Sans ça, le push automatique de fin de tour (autoPushToGitHub,
+           * plus bas) resterait sans dépôt cible malgré cet import déclenché
+           * depuis le chat — l'utilisateur devrait quand même repasser par le
+           * bouton Déployer pour choisir MANUELLEMENT le dépôt qu'il vient
+           * pourtant d'ouvrir ici.
+           */
+          saveSelectedRepo({ owner, repo, branch });
 
           return;
         }

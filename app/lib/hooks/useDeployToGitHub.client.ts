@@ -38,7 +38,14 @@ export function loadSelectedRepo(): SelectedRepo | null {
   }
 }
 
-function saveSelectedRepo(repo: SelectedRepo) {
+/**
+ * Exporté pour Chat.client.tsx : un import déclenché par l'IA (voir
+ * github-import-tools.ts) doit fixer le dépôt cible de la même façon qu'un
+ * déploiement ou un import manuel, sinon le push automatique de fin de tour
+ * (autoPushToGitHub) reste silencieusement sans cible même si l'utilisateur
+ * vient d'ouvrir ce dépôt précis depuis le chat.
+ */
+export function saveSelectedRepo(repo: SelectedRepo) {
   const id = chatId.get();
 
   if (!id) {

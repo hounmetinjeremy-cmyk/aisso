@@ -101,10 +101,19 @@ export function buildGithubImportTools(params: {
           const textFiles = result.files.filter((f) => !f.isBinary);
           const binaryFiles = result.files.filter((f) => f.isBinary);
 
-          // Place tout le dépôt dans l'éditeur immédiatement — jamais bloqué par le budget de contexte ci-dessous.
+          /*
+           * Place tout le dépôt dans l'éditeur immédiatement — jamais bloqué
+           * par le budget de contexte ci-dessous. owner/repo/branch permet au
+           * client de fixer aussi ce dépôt comme cible de push (voir
+           * Chat.client.tsx) — sinon le push automatique de fin de tour
+           * resterait sans cible malgré cet import.
+           */
           writer?.write({
             type: 'data-import-files',
             data: {
+              owner,
+              repo,
+              branch,
               files: result.files.map((f) => ({ path: f.path, content: f.content, isBinary: f.isBinary })),
             },
           });
