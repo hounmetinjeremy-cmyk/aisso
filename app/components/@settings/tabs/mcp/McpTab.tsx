@@ -321,6 +321,11 @@ export default function McpTab() {
               onChange={(e) => setMaxLLMSteps(parseInt(e.target.value, 10) || 1)}
               className="w-full px-3 py-2 text-sm rounded-lg bg-white dark:bg-bolt-elements-background-depth-4 border border-bolt-elements-borderColor text-bolt-elements-textPrimary focus:outline-none focus:ring-2 focus:ring-blue-500"
             />
+            <p className="mt-1.5 text-xs text-bolt-elements-textTertiary">
+              Ceci n'est qu'un plafond de sécurité, pas une durée à régler. L'IA s'arrête déjà d'elle-même dès qu'elle a
+              fini — cette limite ne sert qu'à éviter une boucle qui tournerait indéfiniment. Vous n'avez normalement
+              jamais besoin d'y toucher, sauf pour une tâche exceptionnellement longue.
+            </p>
           </div>
 
           <div className="flex justify-end">
