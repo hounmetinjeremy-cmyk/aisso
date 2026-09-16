@@ -264,7 +264,25 @@ async function chatAction({ context, request }: ActionFunctionArgs) {
           messageSliceId,
         });
 
-        writer.merge(result.toUIMessageStream());
+        writer.merge(
+          result.toUIMessageStream({
+            /*
+             * Le SDK masque volontairement le vrai message par défaut ("An error
+             * occurred.", voir node_modules/ai/dist/index.js) pour ne jamais fuiter
+             * un détail serveur sensible — mais ça rendait TOUTE erreur (un outil
+             * qui échoue, le fournisseur LLM qui coupe en plein stream, etc.)
+             * totalement indiscernable d'une autre côté utilisateur. On renvoie ici
+             * le vrai message (sans stack ni détails internes) pour que l'UI et le
+             * runbook GitHub Actions/logs Render restent exploitables.
+             */
+            onError: (error: unknown) => {
+              const message = error instanceof Error ? error.message : String(error);
+              logger.error('streamText result error', error);
+
+              return message;
+            },
+          }),
+        );
       },
       onError: (error: unknown) => {
         const errorMessage = error instanceof Error ? error.message : 'Unknown error';
