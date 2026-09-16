@@ -12,3 +12,9 @@ binding = "ASSETS"
 
 # Conteneurs (payants) totalement retires le 18/08. Plus aucun binding
 # lie a un service de conteneur ici.
+
+# URL publique du terminal reel (exec-service sur Render.com) — voir
+# exec-service/README.md. Pas sensible en soi, donc en clair ici (contrairement
+# a EXEC_SERVICE_TOKEN, qui reste un secret Cloudflare, jamais dans ce fichier).
+[vars]
+EXEC_SERVICE_URL = "https://aisso-exec-service.onrender.com"
