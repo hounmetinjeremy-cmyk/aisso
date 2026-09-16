@@ -120,7 +120,15 @@ export const ChatImpl = memo(
     const [chatMode, setChatMode] = useState<'discuss' | 'build'>('build');
     const mcpSettings = useMCPStore((state) => state.settings);
     const { user: authUser } = useAuth();
-    const [firebaseIdToken, setFirebaseIdToken] = useState<string | undefined>(undefined);
+
+    /*
+     * DefaultChatTransport (voir plus bas) fige body/headers au montage — un
+     * closure sur de l'état React resterait donc bloqué à sa valeur initiale
+     * (undefined) pour toujours. Une ref, elle, reste lue à l'appel réel, pas
+     * à la création de la fonction — même pattern que getApiKeysFromCookies()
+     * pour `apiKeys` juste en dessous.
+     */
+    const firebaseIdTokenRef = useRef<string | undefined>(undefined);
     const { deploy: deployToGitHub } = useDeployToGitHub();
 
     /*
@@ -130,7 +138,7 @@ export const ChatImpl = memo(
      */
     useEffect(() => {
       if (!authUser) {
-        setFirebaseIdToken(undefined);
+        firebaseIdTokenRef.current = undefined;
         return undefined;
       }
 
@@ -141,7 +149,7 @@ export const ChatImpl = memo(
           .getIdToken()
           .then((token) => {
             if (!cancelled) {
-              setFirebaseIdToken(token);
+              firebaseIdTokenRef.current = token;
             }
           })
           .catch(() => {});
@@ -240,6 +248,16 @@ export const ChatImpl = memo(
       messages: initialMessages,
       transport: new DefaultChatTransport({
         api: '/api/chat',
+
+        /*
+         * C'est CE header, pas le champ `firebaseIdToken` du body ci-dessous,
+         * que api.chat.ts lit réellement (request.headers.get('Authorization'))
+         * — le body seul ne suffisait pas, l'utilisateur n'était donc jamais
+         * authentifié côté serveur et github?.isConnected/vercelToken restaient
+         * toujours faux, peu importe ce que l'utilisateur avait connecté.
+         */
+        headers: (): Record<string, string> =>
+          firebaseIdTokenRef.current ? { Authorization: `Bearer ${firebaseIdTokenRef.current}` } : {},
         body: () => ({
           /*
            * useChat (v5) ne recrée pas son transport à chaque render — cette
@@ -275,7 +293,6 @@ export const ChatImpl = memo(
           },
           maxLLMSteps: mcpSettings.maxLLMSteps,
           mcpConfig: mcpSettings.mcpConfig,
-          firebaseIdToken,
 
           // Sert de graine stable de nom de projet pour deploy_to_vercel (voir vercel-tools.ts) — même logique que useVercelDeploy.
           chatId: chatId.get(),
