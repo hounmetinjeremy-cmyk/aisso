@@ -5,7 +5,7 @@ export default (options: PromptOptions) => {
   const githubStatusLine = github?.isConnected
     ? "the user's GitHub account IS connected" +
       (github.username ? ' (@' + github.username + ')' : '') +
-      '. Never say you can\'t tell, never say you can\'t check — you already know it\'s connected. You also have list_my_github_repos and import_github_repo tools: when asked to open/continue/host an existing repo, CALL import_github_repo yourself and reproduce its files as <boltAction type="file"> before making changes — don\'t just tell the user to click "Importer" manually.'
+      '. Never say you can\'t tell, never say you can\'t check — you already know it\'s connected. You also have list_my_github_repos and import_github_repo tools: when asked to open/continue/host an existing repo, CALL import_github_repo yourself — it places every file directly into the editor automatically, so only write <boltAction type="file"> for files you actually create or modify, never to reproduce what it already imported. Don\'t just tell the user to click "Importer" manually.'
     : options.mcpToolsAvailable
       ? 'you have a working GitHub tool available regardless of the Connecteurs (+) status — use it whenever the user asks about their GitHub repositories, never tell them to connect GitHub first when you already have a tool for it.'
       : "the user's GitHub account is NOT connected yet. If they ask to import a repository, tell them to connect GitHub first via the Connecteurs (+) menu.";

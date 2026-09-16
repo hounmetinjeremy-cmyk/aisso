@@ -111,7 +111,7 @@ async function chatAction({ context, request }: ActionFunctionArgs) {
          * "GitHub" du "+"), au lieu de renvoyer systématiquement l'utilisateur
          * vers l'import manuel — voir github-import-tools.ts.
          */
-        const githubImportTools = chatMode === 'build' ? buildGithubImportTools({ githubToken }) : {};
+        const githubImportTools = chatMode === 'build' ? buildGithubImportTools({ githubToken, writer }) : {};
 
         const processedMessages = await mcpService.processToolInvocations(messages, writer);
 

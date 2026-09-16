@@ -8,7 +8,7 @@ import { useMessageParser, usePromptEnhancer, useShortcuts } from '~/lib/hooks';
 import { description, useChatHistory } from '~/lib/persistence';
 import { chatStore } from '~/lib/stores/chat';
 import { workbenchStore } from '~/lib/stores/workbench';
-import { DEFAULT_MODEL, DEFAULT_PROVIDER, PROMPT_COOKIE_KEY, PROVIDER_LIST } from '~/utils/constants';
+import { DEFAULT_MODEL, DEFAULT_PROVIDER, PROMPT_COOKIE_KEY, PROVIDER_LIST, WORK_DIR } from '~/utils/constants';
 import { cubicEasingFn } from '~/utils/easings';
 import { createScopedLogger, renderLogger } from '~/utils/logger';
 import { BaseChat } from './BaseChat';
@@ -276,6 +276,27 @@ export const ChatImpl = memo(
         handleError(e, 'chat');
       },
       onData: (dataPart) => {
+        /*
+         * Écrit directement dans workbenchStore (même mécanisme que l'import
+         * manuel, voir useDeployToGitHub.client.ts) au lieu de faire recopier
+         * le contenu par le modèle via des boltAction — voir
+         * github-import-tools.ts. Évite toute limite liée à la fenêtre de
+         * sortie du modèle : le serveur streame le contenu réel une seule
+         * fois, jamais retapé.
+         */
+        if ((dataPart as any).type === 'data-import-files') {
+          const { files } = (dataPart as any).data as {
+            files: { path: string; content: string; isBinary?: boolean }[];
+          };
+
+          void workbenchStore.createFiles(
+            files.map((file) => ({ path: `${WORK_DIR}/${file.path}`, content: file.content, isBinary: file.isBinary })),
+            'import',
+          );
+
+          return;
+        }
+
         setChatData((prev) => [...prev, dataPart]);
       },
       onFinish: () => {

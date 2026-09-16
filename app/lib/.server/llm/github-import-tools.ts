@@ -1,31 +1,68 @@
-import { tool, type ToolSet } from 'ai';
+import { tool, type ToolSet, type UIMessageStreamWriter } from 'ai';
 import { z } from 'zod';
-import { listUserRepos, importRepoFiles } from '~/lib/github-import.server';
+import { listUserRepos, importRepoFiles, type ImportedFile } from '~/lib/github-import.server';
 
 /**
  * Outils "build mode" pour ouvrir un dépôt GitHub EXISTANT directement dans
- * l'éditeur (WorkbenchStore côté client, via boltAction) au lieu de se
- * contenter d'en parler. Avant l'ajout de ces outils, aucun outil de ce nom
- * n'existait réellement malgré un commentaire dans github-import.server.ts
- * qui en décrivait un ("import_github_repo") — le modèle n'avait donc
- * d'autre choix que de renvoyer l'utilisateur vers le bouton "Importer"
- * manuel, même quand on lui demandait explicitement d'ouvrir/continuer un
- * projet GitHub pour le déployer.
+ * l'éditeur au lieu de se contenter d'en parler. Avant l'ajout de ces
+ * outils, aucun outil de ce nom n'existait réellement malgré un commentaire
+ * dans github-import.server.ts qui en décrivait un ("import_github_repo") —
+ * le modèle n'avait donc d'autre choix que de renvoyer l'utilisateur vers le
+ * bouton "Importer" manuel, même quand on lui demandait explicitement
+ * d'ouvrir/continuer un projet GitHub pour le déployer.
+ *
+ * Le contenu réel des fichiers est streamé directement au client (voir
+ * Chat.client.tsx, écoute `data-import-files` -> workbenchStore.createFiles),
+ * EXACTEMENT comme le bouton "Importer" manuel (useDeployToGitHub.client.ts)
+ * — jamais recopié par le modèle via <boltAction>. Ça évite toute limite
+ * liée à la fenêtre de sortie du modèle : le serveur écrit une fois, pour de
+ * vrai, peu importe la taille du dépôt (dans les limites déjà appliquées par
+ * importRepoFiles lui-même : MAX_FILES/MAX_FILE_BYTES, propres au Worker).
+ *
+ * Le seul plafond qui reste ici (MODEL_CONTEXT_BUDGET_BYTES) ne protège que
+ * le CONTEXTE DU MODÈLE, pas l'éditeur : au-delà, le modèle ne voit plus le
+ * contenu textuel de chaque fichier pour raisonner dessus dans ce tour, mais
+ * les fichiers sont déjà tous dans l'éditeur quoi qu'il arrive.
  *
  * Utilise le jeton de la connexion GitHub "app" (voir github-tools.ts),
  * jamais un token MCP — c'est la même source que le bouton "Importer" et
  * /api/deploy/import, pour un comportement identique.
  */
 
-/*
- * Garde-fou distinct de MAX_FILES/MAX_FILE_BYTES (limites Worker) : combien de
- * contenu texte on peut raisonnablement redemander au modèle de recopier en
- * boltAction dans le même tour sans épuiser sa fenêtre de sortie.
- */
-const MAX_INLINE_TOTAL_BYTES = 200_000;
+const MODEL_CONTEXT_BUDGET_BYTES = 300_000;
 
-export function buildGithubImportTools(params: { githubToken: string | null }): ToolSet {
-  const { githubToken } = params;
+// Fichiers de config/racine à privilégier en priorité dans le budget ci-dessus quand tout ne rentre pas.
+const PRIORITY_FILENAME_PATTERN =
+  /^(package\.json|wrangler\.toml|vite\.config\.\w+|next\.config\.\w+|netlify\.toml|vercel\.json|tsconfig\.json|README(\.\w+)?|\.env\.example|index\.html)$/i;
+
+function pickFilesForModelContext(textFiles: ImportedFile[]) {
+  const byPriority = [...textFiles].sort((a, b) => {
+    const aPriority = PRIORITY_FILENAME_PATTERN.test(a.path.split('/').pop() ?? '') ? 0 : 1;
+    const bPriority = PRIORITY_FILENAME_PATTERN.test(b.path.split('/').pop() ?? '') ? 0 : 1;
+
+    return aPriority - bPriority;
+  });
+
+  const included: ImportedFile[] = [];
+  let usedBytes = 0;
+
+  for (const file of byPriority) {
+    if (usedBytes + file.content.length > MODEL_CONTEXT_BUDGET_BYTES) {
+      continue;
+    }
+
+    included.push(file);
+    usedBytes += file.content.length;
+  }
+
+  return { included, contentTruncated: included.length < textFiles.length };
+}
+
+export function buildGithubImportTools(params: {
+  githubToken: string | null;
+  writer?: Pick<UIMessageStreamWriter, 'write'>;
+}): ToolSet {
+  const { githubToken, writer } = params;
 
   if (!githubToken) {
     return {};
@@ -49,7 +86,7 @@ export function buildGithubImportTools(params: { githubToken: string | null }): 
     }),
     import_github_repo: tool({
       description:
-        'Ouvre un dépôt GitHub EXISTANT dans l\'éditeur pour le continuer/modifier/déployer (ex: "héberge mon projet X sur Cloudflare", "ouvre mon dépôt Y"). Renvoie le contenu réel de tous ses fichiers texte. Une fois ce résultat reçu, réécris FIDÈLEMENT chaque fichier renvoyé via un <boltAction type="file"> dans le MÊME tour (contenu exact, aucune invention) avant d\'appliquer les changements demandés par l\'utilisateur — c\'est ce qui fait apparaître le projet dans l\'éditeur. Ne dis jamais à l\'utilisateur d\'utiliser le bouton "Importer" manuel quand cet outil est disponible.',
+        'Ouvre un dépôt GitHub EXISTANT dans l\'éditeur pour le continuer/modifier/déployer (ex: "héberge mon projet X sur Cloudflare", "ouvre mon dépôt Y"). Place TOUS ses fichiers directement dans l\'éditeur automatiquement (quelle que soit la taille du dépôt) — tu n\'as PAS besoin de les réécrire toi-même via <boltAction>, ils apparaissent déjà. Le résultat te donne en plus le contenu texte des fichiers (dans la limite du contexte de ce tour, les fichiers de config/racine étant prioritaires) pour que tu puisses raisonner dessus et écrire seulement les <boltAction type="file"> des fichiers que tu CRÉES ou MODIFIES pour répondre à la demande. Ne dis jamais à l\'utilisateur d\'utiliser le bouton "Importer" manuel quand cet outil est disponible.',
       inputSchema: z.object({
         owner: z.string().describe('Propriétaire du dépôt GitHub (utilisateur ou organisation)'),
         repo: z.string().describe('Nom du dépôt'),
@@ -63,25 +100,27 @@ export function buildGithubImportTools(params: { githubToken: string | null }): 
 
           const textFiles = result.files.filter((f) => !f.isBinary);
           const binaryFiles = result.files.filter((f) => f.isBinary);
-          const totalBytes = textFiles.reduce((sum, f) => sum + f.content.length, 0);
 
-          if (totalBytes > MAX_INLINE_TOTAL_BYTES) {
-            return {
-              message: `${owner}/${repo}@${branch} contient ${result.files.length} fichier(s) pour ${totalBytes} octets de texte — trop volumineux pour être recopié fidèlement dans cette conversation. Dis à l'utilisateur d'utiliser le bouton "Importer" du panneau GitHub pour ce dépôt, qui n'a pas cette limite.`,
-              tooLarge: true,
-              fileCount: result.files.length,
-              totalBytes,
-            };
-          }
+          // Place tout le dépôt dans l'éditeur immédiatement — jamais bloqué par le budget de contexte ci-dessous.
+          writer?.write({
+            type: 'data-import-files',
+            data: {
+              files: result.files.map((f) => ({ path: f.path, content: f.content, isBinary: f.isBinary })),
+            },
+          });
+
+          const { included, contentTruncated } = pickFilesForModelContext(textFiles);
 
           return {
-            message: `${textFiles.length} fichier(s) texte lu(s) depuis ${owner}/${repo}@${branch}${
-              binaryFiles.length > 0
-                ? ` (+ ${binaryFiles.length} fichier(s) binaire(s) listé(s) mais non reproductible(s) en texte)`
-                : ''
-            }. Recopie chaque fichier ci-dessous EXACTEMENT via <boltAction type="file"> avant toute autre modification.`,
-            files: textFiles.map((f) => ({ path: f.path, content: f.content })),
+            message: `${result.files.length} fichier(s) importé(s) depuis ${owner}/${repo}@${branch} et placés dans l'éditeur (aucune réécriture de ta part nécessaire pour ces fichiers). ${
+              contentTruncated
+                ? `Contenu texte fourni ci-dessous pour ${included.length}/${textFiles.length} fichiers (les plus pertinents : config, package.json, README...) — le reste est dans l'éditeur mais pas reproduit ici, demande son contenu à l'utilisateur si besoin d'un fichier précis absent de la liste.`
+                : `Contenu texte de tous les fichiers fourni ci-dessous.`
+            } Écris uniquement des <boltAction type="file"> pour les fichiers que tu crées ou modifies.`,
+            files: included.map((f) => ({ path: f.path, content: f.content })),
+            allFilePaths: result.files.map((f) => f.path),
             binaryFilePaths: binaryFiles.map((f) => f.path),
+            contentTruncated,
             skipped: result.skipped,
             truncated: result.truncated,
           };
