@@ -12,6 +12,7 @@ import { buildProjectIndexTools } from '~/lib/.server/llm/project-index-tools';
 import { buildGithubImportTools } from '~/lib/.server/llm/github-import-tools';
 import { buildGithubActionsTools } from '~/lib/.server/llm/github-actions-tools';
 import { buildExecServiceTools } from '~/lib/.server/llm/exec-service-tools';
+import { describeToolCall } from '~/lib/.server/llm/describe-tool-call';
 import { tryExtractMcpFileRead, captureMcpFileRead } from '~/lib/.server/llm/mcp-file-capture.server';
 import { verifyFirebaseIdToken } from '~/lib/firebase-verify.server';
 import { getSupabaseAdmin } from '~/lib/supabase-admin.server';
@@ -204,7 +205,7 @@ async function chatAction({ context, request }: ActionFunctionArgs) {
                 order: progressCounter++,
                 message:
                   toolCalls.length > 0
-                    ? `Étape ${stepIndex + 1} sur ${maxSteps} : ${toolCalls.length} outil${toolCalls.length > 1 ? 's' : ''} exécuté${toolCalls.length > 1 ? 's' : ''}`
+                    ? toolCalls.map((toolCall) => describeToolCall(toolCall)).join(' · ')
                     : `Étape ${stepIndex + 1} sur ${maxSteps} terminée`,
               } satisfies ProgressAnnotation,
             });
