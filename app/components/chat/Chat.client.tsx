@@ -315,6 +315,28 @@ export const ChatImpl = memo(
           return;
         }
 
+        /*
+         * Le disque du terminal (exec-service) et l'éditeur sont deux
+         * emplacements séparés (voir exec-service-tools.ts,
+         * sync_terminal_files_to_editor) — ceci est le seul pont entre les
+         * deux. Contrairement à data-import-files, aucun dépôt GitHub n'est
+         * forcément impliqué (le terminal peut construire quelque chose qui
+         * n'existe encore nulle part sur GitHub), donc pas de
+         * saveSelectedRepo ici.
+         */
+        if ((dataPart as any).type === 'data-sync-files') {
+          const { files } = (dataPart as any).data as {
+            files: { path: string; content: string; isBinary?: boolean }[];
+          };
+
+          void workbenchStore.createFiles(
+            files.map((file) => ({ path: `${WORK_DIR}/${file.path}`, content: file.content, isBinary: file.isBinary })),
+            'terminal-sync',
+          );
+
+          return;
+        }
+
         setChatData((prev) => [...prev, dataPart]);
       },
       onFinish: () => {

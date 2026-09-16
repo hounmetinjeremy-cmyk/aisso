@@ -144,6 +144,7 @@ async function chatAction({ context, request }: ActionFunctionArgs) {
             ? buildExecServiceTools({
                 execServiceUrl: env?.EXEC_SERVICE_URL ?? null,
                 execServiceToken: env?.EXEC_SERVICE_TOKEN ?? null,
+                writer,
               })
             : {};
 

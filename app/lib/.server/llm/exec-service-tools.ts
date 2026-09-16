@@ -1,4 +1,4 @@
-import { tool, type ToolSet } from 'ai';
+import { tool, type ToolSet, type UIMessageStreamWriter } from 'ai';
 import { z } from 'zod';
 
 /**
@@ -24,8 +24,9 @@ const FETCH_TIMEOUT_MS = 100_000;
 export function buildExecServiceTools(params: {
   execServiceUrl: string | null;
   execServiceToken: string | null;
+  writer?: UIMessageStreamWriter;
 }): ToolSet {
-  const { execServiceUrl, execServiceToken } = params;
+  const { execServiceUrl, execServiceToken, writer } = params;
 
   if (!execServiceUrl || !execServiceToken) {
     return {};
@@ -90,6 +91,89 @@ export function buildExecServiceTools(params: {
             message: isAbort
               ? "Pas de réponse d'exec-service dans le délai imparti — il est peut-être en train de se réveiller (tier gratuit), réessaie."
               : `Échec de l'appel à exec-service : ${error instanceof Error ? error.message : 'erreur inconnue'}`,
+          };
+        } finally {
+          clearTimeout(timeout);
+        }
+      },
+    }),
+
+    /*
+     * CRITIQUE : le disque du terminal (exec-service) et l'éditeur de
+     * l'utilisateur (workbenchStore, dans son navigateur) sont deux endroits
+     * de stockage totalement SÉPARÉS — un `git clone`/fichier créé via
+     * run_command n'apparaît JAMAIS automatiquement dans l'éditeur. Cet
+     * outil est le seul pont entre les deux : il lit les fichiers réels du
+     * terminal et les place dans l'éditeur, exactement comme
+     * import_github_repo le fait pour un import GitHub (même mécanisme
+     * `data-import-files` côté client, voir Chat.client.tsx).
+     */
+    sync_terminal_files_to_editor: tool({
+      description:
+        "Copie les fichiers RÉELS du terminal (dossier du workspace exec-service, ex: après un git clone/npm install/build ou des modifications faites via run_command) dans l'éditeur de l'utilisateur, pour qu'il les voie. Le terminal et l'éditeur sont deux endroits séparés : rien de fait via run_command n'apparaît dans l'éditeur tant que cet outil n'a pas été appelé. Appelle-le après avoir cloné/construit/modifié un projet via run_command si l'utilisateur doit voir ou garder le résultat — sinon ce travail reste invisible et perdu au prochain redémarrage à froid du service. Exclut automatiquement node_modules/.git/dist/build et assimilés.",
+      inputSchema: z.object({
+        dir: z
+          .string()
+          .optional()
+          .describe(
+            'Dossier à synchroniser, relatif à la racine du workspace (ex: "mon-projet") — omis = toute la racine du workspace',
+          ),
+      }),
+      execute: async ({ dir }) => {
+        const controller = new AbortController();
+        const timeout = setTimeout(() => controller.abort(), FETCH_TIMEOUT_MS);
+
+        try {
+          const res = await fetch(`${execServiceUrl.replace(/\/$/, '')}/tree`, {
+            method: 'POST',
+            headers: {
+              Authorization: `Bearer ${execServiceToken}`,
+              'Content-Type': 'application/json',
+            },
+            body: JSON.stringify({ dir }),
+            signal: controller.signal,
+          });
+
+          if (!res.ok) {
+            return {
+              message: `exec-service a répondu HTTP ${res.status} en listant "${dir || '.'}" — vérifie que ce dossier existe bien dans le workspace (une commande précédente a-t-elle vraiment réussi ?).`,
+            };
+          }
+
+          const result = await res.json<{
+            files: { path: string; content: string; isBinary: boolean; skippedReason?: string }[];
+            truncated: boolean;
+          }>();
+
+          if (result.files.length === 0) {
+            return {
+              message: `Aucun fichier trouvé dans "${dir || '.'}" — vérifie le chemin, ou qu'une commande précédente (ex: git clone) a bien créé quelque chose là.`,
+            };
+          }
+
+          writer?.write({
+            type: 'data-sync-files',
+            data: { files: result.files.map((f) => ({ path: f.path, content: f.content, isBinary: f.isBinary })) },
+          });
+
+          const skipped = result.files.filter((f) => f.skippedReason);
+
+          return {
+            message: `${result.files.length} fichier(s) copié(s) depuis le terminal ("${dir || '.'}") vers l'éditeur de l'utilisateur — il peut maintenant les voir. Ne réécris PAS ces fichiers via <boltAction>, ils y sont déjà.${
+              result.truncated
+                ? " Le dossier est volumineux, la synchronisation s'est arrêtée avant la fin (plafond de sécurité) — relance sur un sous-dossier plus précis si besoin du reste."
+                : ''
+            }${skipped.length > 0 ? ` ${skipped.length} fichier(s) ignoré(s) car trop volumineux ou binaires (contenu non copié, juste le chemin).` : ''}`,
+            fileCount: result.files.length,
+            truncated: result.truncated,
+          };
+        } catch (error) {
+          const isAbort = error instanceof Error && error.name === 'AbortError';
+
+          return {
+            message: isAbort
+              ? "Pas de réponse d'exec-service dans le délai imparti pour lister les fichiers — réessaie."
+              : `Échec de la synchronisation : ${error instanceof Error ? error.message : 'erreur inconnue'}`,
           };
         } finally {
           clearTimeout(timeout);

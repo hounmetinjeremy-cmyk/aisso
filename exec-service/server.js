@@ -115,6 +115,149 @@ app.post('/run', (req, res) => {
   );
 });
 
+// Dossiers jamais utiles à remonter vers l'éditeur — lourds et/ou régénérables.
+const EXCLUDED_DIR_NAMES = new Set([
+  'node_modules',
+  '.git',
+  'dist',
+  'build',
+  '.next',
+  '.turbo',
+  '.cache',
+  'coverage',
+  'out',
+  'target',
+  'vendor',
+  '.venv',
+  '__pycache__',
+  '.wrangler',
+]);
+
+const MAX_TREE_FILES = 800;
+const MAX_FILE_CONTENT_BYTES = 300_000;
+const MAX_TOTAL_TREE_BYTES = 8_000_000;
+
+/** Heuristique simple : un fichier avec un octet nul dans ses premiers Ko est traité comme binaire. */
+function looksBinary(buffer) {
+  const sampleLength = Math.min(buffer.length, 8000);
+
+  for (let i = 0; i < sampleLength; i++) {
+    if (buffer[i] === 0) {
+      return true;
+    }
+  }
+
+  return false;
+}
+
+function walkDirectory(rootDir) {
+  const files = [];
+  let totalBytes = 0;
+  let truncated = false;
+
+  function visit(currentDir) {
+    if (truncated) {
+      return;
+    }
+
+    let entries;
+
+    try {
+      entries = fs.readdirSync(currentDir, { withFileTypes: true });
+    } catch {
+      return;
+    }
+
+    for (const entry of entries) {
+      if (truncated) {
+        return;
+      }
+
+      if (entry.isDirectory()) {
+        if (EXCLUDED_DIR_NAMES.has(entry.name)) {
+          continue;
+        }
+
+        visit(path.join(currentDir, entry.name));
+        continue;
+      }
+
+      if (!entry.isFile()) {
+        continue;
+      }
+
+      if (files.length >= MAX_TREE_FILES || totalBytes >= MAX_TOTAL_TREE_BYTES) {
+        truncated = true;
+        return;
+      }
+
+      const absolutePath = path.join(currentDir, entry.name);
+      const relativePath = path.relative(rootDir, absolutePath).split(path.sep).join('/');
+
+      let stat;
+
+      try {
+        stat = fs.statSync(absolutePath);
+      } catch {
+        continue;
+      }
+
+      if (stat.size > MAX_FILE_CONTENT_BYTES) {
+        files.push({ path: relativePath, content: '', isBinary: true, skippedReason: 'too_large' });
+        continue;
+      }
+
+      let buffer;
+
+      try {
+        buffer = fs.readFileSync(absolutePath);
+      } catch {
+        continue;
+      }
+
+      if (looksBinary(buffer)) {
+        files.push({ path: relativePath, content: '', isBinary: true, skippedReason: 'binary' });
+        continue;
+      }
+
+      totalBytes += buffer.length;
+      files.push({ path: relativePath, content: buffer.toString('utf8'), isBinary: false });
+    }
+  }
+
+  visit(rootDir);
+
+  return { files, truncated };
+}
+
+app.post('/tree', (req, res) => {
+  const auth = req.get('authorization') || '';
+  const provided = auth.startsWith('Bearer ') ? auth.slice('Bearer '.length) : null;
+
+  if (provided !== TOKEN) {
+    return res.status(401).json({ error: 'Non autorisé.' });
+  }
+
+  const { dir } = req.body || {};
+  const resolvedDir = resolveWorkspacePath(typeof dir === 'string' ? dir : undefined);
+
+  if (!resolvedDir) {
+    return res.status(400).json({ error: 'dir invalide (doit rester dans le workspace).' });
+  }
+
+  if (!fs.existsSync(resolvedDir)) {
+    return res.status(404).json({ error: `Dossier introuvable : ${dir || '.'}` });
+  }
+
+  console.log(`[tree] ${new Date().toISOString()} dir=${dir || '.'}`);
+
+  const { files, truncated } = walkDirectory(resolvedDir);
+
+  console.log(`[tree] ${new Date().toISOString()} files=${files.length} truncated=${truncated}`);
+
+  res.json({ files, truncated });
+});
+
 app.listen(PORT, () => {
   console.log(`aisso-exec-service à l'écoute sur le port ${PORT}, workspace: ${WORKSPACE_ROOT}`);
 });
