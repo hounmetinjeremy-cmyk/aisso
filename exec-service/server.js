@@ -74,6 +74,9 @@ app.post('/run', (req, res) => {
     return res.status(400).json({ error: 'command manquant ou vide.' });
   }
 
+  // Trace verifiable dans les logs Render (type "app") — sert a distinguer un vrai appel d'une reponse inventee cote IA.
+  console.log(`[run] ${new Date().toISOString()} cwd=${cwd || '.'} command=${JSON.stringify(command)}`);
+
   const resolvedCwd = resolveWorkspacePath(typeof cwd === 'string' ? cwd : undefined);
 
   if (!resolvedCwd) {
@@ -96,12 +99,15 @@ app.post('/run', (req, res) => {
       const durationMs = Date.now() - startedAt;
       const outTruncated = truncate(stdout ?? '');
       const errTruncated = truncate(stderr ?? '');
+      const exitCode = error && typeof error.code === 'number' ? error.code : error ? 1 : 0;
+
+      console.log(`[run] ${new Date().toISOString()} exitCode=${exitCode} durationMs=${durationMs}`);
 
       res.json({
         stdout: outTruncated.text,
         stderr: errTruncated.text,
         outputTruncated: outTruncated.truncated || errTruncated.truncated,
-        exitCode: error && typeof error.code === 'number' ? error.code : error ? 1 : 0,
+        exitCode,
         timedOut: error?.killed === true && error?.signal === 'SIGTERM',
         durationMs,
       });
