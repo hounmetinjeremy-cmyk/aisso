@@ -305,6 +305,15 @@ export const ChatImpl = memo(
           );
 
           /*
+           * Confirmation déclenchée par l'événement RÉEL, pas par le texte de
+           * l'IA — si ce toast n'apparaît pas, rien n'a réellement été
+           * importé quoi que l'IA prétende avoir dit dans sa réponse.
+           */
+          toast.success(
+            `${files.length} fichier${files.length > 1 ? 's' : ''} importé${files.length > 1 ? 's' : ''} depuis ${owner}/${repo}`,
+          );
+
+          /*
            * Sans ça, le push automatique de fin de tour (autoPushToGitHub,
            * plus bas) resterait sans dépôt cible malgré cet import déclenché
            * depuis le chat — l'utilisateur devrait quand même repasser par le
@@ -336,6 +345,11 @@ export const ChatImpl = memo(
           void workbenchStore.createFiles(
             files.map((file, i) => ({ path: fullPaths[i], content: file.content, isBinary: file.isBinary })),
             'terminal-sync',
+          );
+
+          // Même principe que data-import-files : confirmation déclenchée par l'événement réel, pas par le texte de l'IA.
+          toast.success(
+            `${files.length} fichier${files.length > 1 ? 's' : ''} synchronisé${files.length > 1 ? 's' : ''} depuis le terminal`,
           );
 
           /*
