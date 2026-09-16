@@ -5,6 +5,7 @@ import { listUserRepos, importRepoFiles, type ImportedFile } from '~/lib/github-
 import { indexGithubProjectViaMcp, type McpFileContentsCaller } from '~/lib/.server/project-indexer-mcp.server';
 import { readAllIndexedFiles } from '~/lib/.server/project-indexer.server';
 import { FILE_READ_TOOL_NAME_PATTERN } from '~/lib/.server/llm/mcp-file-capture.server';
+import { persistImportedFilesToSnapshot } from '~/lib/.server/llm/persist-imported-files.server';
 
 /**
  * Outils "build mode" pour ouvrir un dépôt GitHub EXISTANT directement dans
@@ -77,8 +78,9 @@ export function buildGithubImportTools(params: {
   mcpTools?: ToolSet;
   supabase: SupabaseClient | null;
   userId: string | null;
+  chatId?: string | null;
 }): ToolSet {
-  const { githubToken, writer, mcpTools, supabase, userId } = params;
+  const { githubToken, writer, mcpTools, supabase, userId, chatId } = params;
 
   const mcpFileTool = Object.entries(mcpTools ?? {}).find(
     ([toolName, toolDef]) => FILE_READ_TOOL_NAME_PATTERN.test(toolName) && typeof toolDef.execute === 'function',
@@ -144,6 +146,17 @@ export function buildGithubImportTools(params: {
             type: 'data-import-files',
             data: { owner, repo, branch, files },
           });
+
+          /*
+           * Sauvegarde aussi directement côté serveur (voir
+           * persist-imported-files.server.ts) : sans ça, si l'utilisateur
+           * quitte l'app juste après cet import, rien de tout ce travail
+           * n'est jamais sauvegardé (c'est normalement le navigateur qui
+           * s'en charge, mais il n'en a pas forcément le temps).
+           */
+          if (supabase && userId && chatId) {
+            persistImportedFilesToSnapshot(supabase, userId, chatId, files).catch(() => {});
+          }
 
           const { included, contentTruncated } = pickFilesForModelContext(textFiles);
 

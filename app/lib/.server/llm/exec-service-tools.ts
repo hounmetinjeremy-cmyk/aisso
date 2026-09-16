@@ -1,5 +1,7 @@
 import { tool, type ToolSet, type UIMessageStreamWriter } from 'ai';
 import { z } from 'zod';
+import type { SupabaseClient } from '@supabase/supabase-js';
+import { persistImportedFilesToSnapshot } from '~/lib/.server/llm/persist-imported-files.server';
 
 /**
  * Vrai terminal pour le mode "build" — via exec-service (voir
@@ -25,8 +27,11 @@ export function buildExecServiceTools(params: {
   execServiceUrl: string | null;
   execServiceToken: string | null;
   writer?: UIMessageStreamWriter;
+  supabase?: SupabaseClient | null;
+  userId?: string | null;
+  chatId?: string | null;
 }): ToolSet {
-  const { execServiceUrl, execServiceToken, writer } = params;
+  const { execServiceUrl, execServiceToken, writer, supabase, userId, chatId } = params;
 
   if (!execServiceUrl || !execServiceToken) {
     return {};
@@ -157,13 +162,25 @@ export function buildExecServiceTools(params: {
             };
           }
 
+          const syncedFiles = result.files.map((f) => ({ path: f.path, content: f.content, isBinary: f.isBinary }));
+
           writer?.write({
             type: 'data-sync-files',
             data: {
-              files: result.files.map((f) => ({ path: f.path, content: f.content, isBinary: f.isBinary })),
+              files: syncedFiles,
               markAsChanged: markAsChanged === true,
             },
           });
+
+          /*
+           * Sauvegarde aussi directement côté serveur (voir
+           * persist-imported-files.server.ts) : sans ça, si l'utilisateur
+           * quitte l'app juste après cette synchro, rien de tout ce travail
+           * n'est jamais sauvegardé.
+           */
+          if (supabase && userId && chatId) {
+            persistImportedFilesToSnapshot(supabase, userId, chatId, syncedFiles).catch(() => {});
+          }
 
           const skipped = result.files.filter((f) => f.skippedReason);
 

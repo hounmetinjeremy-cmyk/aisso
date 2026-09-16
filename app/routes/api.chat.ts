@@ -84,233 +84,251 @@ async function chatAction({ context, request }: ActionFunctionArgs) {
 
     const stream = createUIMessageStream({
       execute: async ({ writer }) => {
-        let progressCounter = 1;
-
         /*
-         * Flux d'étapes pour l'UI (voir ProgressCompilation.tsx) : chaque
-         * `step-N` est d'abord écrit "in-progress", puis réécrit "complete"
-         * dans onStepFinish — même label, donc l'UI remplace l'entrée au
-         * lieu d'en accumuler une dupliquée. onFinish clôt toujours la
-         * dernière étape, y compris pour un tour sans aucun appel d'outil.
+         * Le corps entier est enveloppé dans cette promesse pour pouvoir la
+         * passer à ctx.waitUntil ci-dessous — sans ça, le Worker s'arrête net
+         * dès que le client se déconnecte (onglet fermé, appli quittée sur
+         * mobile), interrompant en plein milieu tout travail en cours
+         * (terminal, import, push...). waitUntil garde le Worker actif
+         * jusqu'à la fin de ce tour, que le client soit encore là ou non.
          */
-        let stepIndex = 0;
+        const work = (async () => {
+          let progressCounter = 1;
 
-        /*
-         * Même valeur par défaut que app/lib/stores/mcp.ts — ce fallback ne
-         * sert que si maxLLMSteps n'a jamais été transmis (aucune requête
-         * client normale ne devrait l'omettre).
-         */
-        const maxSteps = maxLLMSteps || 500;
+          /*
+           * Flux d'étapes pour l'UI (voir ProgressCompilation.tsx) : chaque
+           * `step-N` est d'abord écrit "in-progress", puis réécrit "complete"
+           * dans onStepFinish — même label, donc l'UI remplace l'entrée au
+           * lieu d'en accumuler une dupliquée. onFinish clôt toujours la
+           * dernière étape, y compris pour un tour sans aucun appel d'outil.
+           */
+          let stepIndex = 0;
 
-        // Partagé entre analyze_github_project et la capture automatique des lectures MCP ci-dessous.
-        const supabaseAdmin = env?.SUPABASE_SERVICE_ROLE_KEY ? getSupabaseAdmin(env.SUPABASE_SERVICE_ROLE_KEY) : null;
+          /*
+           * Même valeur par défaut que app/lib/stores/mcp.ts — ce fallback ne
+           * sert que si maxLLMSteps n'a jamais été transmis (aucune requête
+           * client normale ne devrait l'omettre).
+           */
+          const maxSteps = maxLLMSteps || 500;
 
-        // Construit ici (pas plus haut) pour pouvoir publier sa progression via `writer` pendant l'indexation.
-        const projectIndexTools = buildProjectIndexTools({
-          supabase: supabaseAdmin,
-          userId,
-          githubToken,
-          mcpTools: mcpService.tools,
-          writer,
-          nextProgressOrder: () => progressCounter++,
-        });
+          // Partagé entre analyze_github_project et la capture automatique des lectures MCP ci-dessous.
+          const supabaseAdmin = env?.SUPABASE_SERVICE_ROLE_KEY ? getSupabaseAdmin(env.SUPABASE_SERVICE_ROLE_KEY) : null;
 
-        /*
-         * Uniquement en mode "build" (éditeur/boltArtifact) : permet au modèle
-         * d'ouvrir lui-même un dépôt GitHub existant déjà connecté (bouton
-         * "GitHub" du "+" OU, à défaut, un serveur MCP donnant accès au
-         * contenu des fichiers), au lieu de renvoyer systématiquement
-         * l'utilisateur vers l'import manuel — voir github-import-tools.ts.
-         */
-        const githubImportTools =
-          chatMode === 'build'
-            ? buildGithubImportTools({
-                githubToken,
-                writer,
-                mcpTools: mcpService.tools,
-                supabase: supabaseAdmin,
-                userId,
-              })
-            : {};
+          // Construit ici (pas plus haut) pour pouvoir publier sa progression via `writer` pendant l'indexation.
+          const projectIndexTools = buildProjectIndexTools({
+            supabase: supabaseAdmin,
+            userId,
+            githubToken,
+            mcpTools: mcpService.tools,
+            writer,
+            nextProgressOrder: () => progressCounter++,
+          });
 
-        /*
-         * Lecture seule des résultats GitHub Actions (voir github-actions-tools.ts)
-         * — le rôle du terminal pour "build/teste mon projet", sans jamais rien
-         * exécuter nous-mêmes : les workflows existants du dépôt tournent déjà
-         * automatiquement à chaque push, ces outils lisent juste leur résultat.
-         */
-        const githubActionsTools = chatMode === 'build' ? buildGithubActionsTools({ githubToken }) : {};
+          /*
+           * Uniquement en mode "build" (éditeur/boltArtifact) : permet au modèle
+           * d'ouvrir lui-même un dépôt GitHub existant déjà connecté (bouton
+           * "GitHub" du "+" OU, à défaut, un serveur MCP donnant accès au
+           * contenu des fichiers), au lieu de renvoyer systématiquement
+           * l'utilisateur vers l'import manuel — voir github-import-tools.ts.
+           */
+          const githubImportTools =
+            chatMode === 'build'
+              ? buildGithubImportTools({
+                  githubToken,
+                  writer,
+                  mcpTools: mcpService.tools,
+                  supabase: supabaseAdmin,
+                  userId,
+                  chatId,
+                })
+              : {};
 
-        /*
-         * Vrai terminal (voir exec-service-tools.ts) — n'existe que si
-         * EXEC_SERVICE_URL/EXEC_SERVICE_TOKEN sont configurés (secrets
-         * Cloudflare, voir exec-service/README.md) ; sinon {} et le modèle
-         * retombe sur githubActionsTools (lecture seule) ci-dessus.
-         */
-        const execServiceTools =
-          chatMode === 'build'
-            ? buildExecServiceTools({
-                execServiceUrl: env?.EXEC_SERVICE_URL ?? null,
-                execServiceToken: env?.EXEC_SERVICE_TOKEN ?? null,
-                writer,
-              })
-            : {};
+          /*
+           * Lecture seule des résultats GitHub Actions (voir github-actions-tools.ts)
+           * — le rôle du terminal pour "build/teste mon projet", sans jamais rien
+           * exécuter nous-mêmes : les workflows existants du dépôt tournent déjà
+           * automatiquement à chaque push, ces outils lisent juste leur résultat.
+           */
+          const githubActionsTools = chatMode === 'build' ? buildGithubActionsTools({ githubToken }) : {};
 
-        /*
-         * Compte Vercel "app" (voir vercel-connection.server.ts) — distinct
-         * d'un serveur MCP tiers. `files` (déjà reçu côté serveur pour ce
-         * tour) permet à deploy_to_vercel de fonctionner sans dépendre du
-         * WebContainer dont dépend le bouton "Déployer" existant (cassé en
-         * production, voir vercel-tools.ts).
-         */
-        const vercelTools = chatMode === 'build' ? buildVercelTools({ vercelToken, files, chatId, origin }) : {};
+          /*
+           * Vrai terminal (voir exec-service-tools.ts) — n'existe que si
+           * EXEC_SERVICE_URL/EXEC_SERVICE_TOKEN sont configurés (secrets
+           * Cloudflare, voir exec-service/README.md) ; sinon {} et le modèle
+           * retombe sur githubActionsTools (lecture seule) ci-dessus.
+           */
+          const execServiceTools =
+            chatMode === 'build'
+              ? buildExecServiceTools({
+                  execServiceUrl: env?.EXEC_SERVICE_URL ?? null,
+                  execServiceToken: env?.EXEC_SERVICE_TOKEN ?? null,
+                  writer,
+                  supabase: supabaseAdmin,
+                  userId,
+                  chatId,
+                })
+              : {};
 
-        const processedMessages = await mcpService.processToolInvocations(messages, writer);
+          /*
+           * Compte Vercel "app" (voir vercel-connection.server.ts) — distinct
+           * d'un serveur MCP tiers. `files` (déjà reçu côté serveur pour ce
+           * tour) permet à deploy_to_vercel de fonctionner sans dépendre du
+           * WebContainer dont dépend le bouton "Déployer" existant (cassé en
+           * production, voir vercel-tools.ts).
+           */
+          const vercelTools = chatMode === 'build' ? buildVercelTools({ vercelToken, files, chatId, origin }) : {};
 
-        const filteredFiles: FileMap | undefined = files;
-        let summary: string | undefined;
-        let messageSliceId: number | undefined;
+          const processedMessages = await mcpService.processToolInvocations(messages, writer);
 
-        if (contextOptimization && files && chatMode === 'build') {
-          // context selection omitted for brevity in emergency restore — keep stream working
-        }
+          const filteredFiles: FileMap | undefined = files;
+          let summary: string | undefined;
+          let messageSliceId: number | undefined;
 
-        const options = {
-          supabaseConnection: supabase,
-          githubConnection,
-          toolChoice: 'auto' as const,
+          if (contextOptimization && files && chatMode === 'build') {
+            // context selection omitted for brevity in emergency restore — keep stream working
+          }
 
-          // Exécution serveur directe des outils MCP (résultat réel, pas "Yes, approved.") + indexation projet
-          tools: {
-            ...mcpService.tools,
-            ...projectIndexTools,
-            ...githubImportTools,
-            ...githubActionsTools,
-            ...execServiceTools,
-            ...vercelTools,
-          },
-          stopWhen: stepCountIs(maxSteps),
-          onStepFinish: ({ toolCalls, toolResults }: { toolCalls: any[]; toolResults: any[] }) => {
-            toolCalls.forEach((toolCall) => {
-              mcpService.processToolCall(toolCall, writer);
-            });
+          const options = {
+            supabaseConnection: supabase,
+            githubConnection,
+            toolChoice: 'auto' as const,
 
-            /*
-             * Sans connexion GitHub "app" (donc sans analyze_github_project), le
-             * modèle lit les fichiers un par un via les outils du serveur MCP —
-             * on mémorise chaque lecture reconnue au passage, sans bloquer le
-             * tour de chat si l'extraction échoue (voir mcp-file-capture.server.ts).
-             */
-            if (supabaseAdmin && userId) {
-              (toolResults || []).forEach((toolResult) => {
-                const captured = tryExtractMcpFileRead(toolResult?.toolName, toolResult?.input, toolResult?.output);
-
-                if (captured) {
-                  captureMcpFileRead(supabaseAdmin, userId, captured).catch((error) => {
-                    logger.error('captureMcpFileRead failed', error);
-                  });
-                }
+            // Exécution serveur directe des outils MCP (résultat réel, pas "Yes, approved.") + indexation projet
+            tools: {
+              ...mcpService.tools,
+              ...projectIndexTools,
+              ...githubImportTools,
+              ...githubActionsTools,
+              ...execServiceTools,
+              ...vercelTools,
+            },
+            stopWhen: stepCountIs(maxSteps),
+            onStepFinish: ({ toolCalls, toolResults }: { toolCalls: any[]; toolResults: any[] }) => {
+              toolCalls.forEach((toolCall) => {
+                mcpService.processToolCall(toolCall, writer);
               });
-            }
 
-            writer.write({
-              type: 'data-progress',
-              data: {
-                type: 'progress',
-                label: `step-${stepIndex}`,
-                status: 'complete',
-                order: progressCounter++,
-                message:
-                  toolCalls.length > 0
-                    ? toolCalls.map((toolCall) => describeToolCall(toolCall)).join(' · ')
-                    : `Étape ${stepIndex + 1} sur ${maxSteps} terminée`,
-                detail:
-                  toolCalls.length > 0
-                    ? toolCalls.map((toolCall) => {
-                        const result = (toolResults || []).find((r) => r?.toolCallId === toolCall.toolCallId)?.output;
-                        const { command, output } = buildToolCallDetail(toolCall, result);
+              /*
+               * Sans connexion GitHub "app" (donc sans analyze_github_project), le
+               * modèle lit les fichiers un par un via les outils du serveur MCP —
+               * on mémorise chaque lecture reconnue au passage, sans bloquer le
+               * tour de chat si l'extraction échoue (voir mcp-file-capture.server.ts).
+               */
+              if (supabaseAdmin && userId) {
+                (toolResults || []).forEach((toolResult) => {
+                  const captured = tryExtractMcpFileRead(toolResult?.toolName, toolResult?.input, toolResult?.output);
 
-                        return { label: describeToolCall(toolCall), command, output };
-                      })
-                    : undefined,
-              } satisfies ProgressAnnotation,
-            });
+                  if (captured) {
+                    captureMcpFileRead(supabaseAdmin, userId, captured).catch((error) => {
+                      logger.error('captureMcpFileRead failed', error);
+                    });
+                  }
+                });
+              }
 
-            stepIndex++;
-
-            if (stepIndex < maxSteps) {
               writer.write({
                 type: 'data-progress',
                 data: {
                   type: 'progress',
                   label: `step-${stepIndex}`,
-                  status: 'in-progress',
+                  status: 'complete',
                   order: progressCounter++,
-                  message: `Étape ${stepIndex + 1} sur ${maxSteps} en cours…`,
+                  message:
+                    toolCalls.length > 0
+                      ? toolCalls.map((toolCall) => describeToolCall(toolCall)).join(' · ')
+                      : `Étape ${stepIndex + 1} sur ${maxSteps} terminée`,
+                  detail:
+                    toolCalls.length > 0
+                      ? toolCalls.map((toolCall) => {
+                          const result = (toolResults || []).find((r) => r?.toolCallId === toolCall.toolCallId)?.output;
+                          const { command, output } = buildToolCallDetail(toolCall, result);
+
+                          return { label: describeToolCall(toolCall), command, output };
+                        })
+                      : undefined,
                 } satisfies ProgressAnnotation,
               });
-            }
-          },
-          onFinish: () => {
-            writer.write({
-              type: 'data-progress',
-              data: {
-                type: 'progress',
-                label: `step-${stepIndex}`,
-                status: 'complete',
-                order: progressCounter++,
-                message: 'Réponse terminée',
-              } satisfies ProgressAnnotation,
-            });
-          },
-        };
 
-        writer.write({
-          type: 'data-progress',
-          data: {
-            type: 'progress',
-            label: `step-${stepIndex}`,
-            status: 'in-progress',
-            order: progressCounter++,
-            message: `Étape 1 sur ${maxSteps} : réflexion en cours…`,
-          } satisfies ProgressAnnotation,
-        });
+              stepIndex++;
 
-        const result = await streamText({
-          messages: [...processedMessages],
-          env: context.cloudflare?.env,
-          options,
-          apiKeys,
-          files,
-          providerSettings,
-          promptId,
-          contextOptimization,
-          contextFiles: filteredFiles,
-          chatMode,
-          designScheme,
-          summary,
-          messageSliceId,
-        });
-
-        writer.merge(
-          result.toUIMessageStream({
-            /*
-             * Le SDK masque volontairement le vrai message par défaut ("An error
-             * occurred.", voir node_modules/ai/dist/index.js) pour ne jamais fuiter
-             * un détail serveur sensible — mais ça rendait TOUTE erreur (un outil
-             * qui échoue, le fournisseur LLM qui coupe en plein stream, etc.)
-             * totalement indiscernable d'une autre côté utilisateur. On renvoie ici
-             * le vrai message (sans stack ni détails internes) pour que l'UI et le
-             * runbook GitHub Actions/logs Render restent exploitables.
-             */
-            onError: (error: unknown) => {
-              const message = error instanceof Error ? error.message : String(error);
-              logger.error('streamText result error', error);
-
-              return message;
+              if (stepIndex < maxSteps) {
+                writer.write({
+                  type: 'data-progress',
+                  data: {
+                    type: 'progress',
+                    label: `step-${stepIndex}`,
+                    status: 'in-progress',
+                    order: progressCounter++,
+                    message: `Étape ${stepIndex + 1} sur ${maxSteps} en cours…`,
+                  } satisfies ProgressAnnotation,
+                });
+              }
             },
-          }),
-        );
+            onFinish: () => {
+              writer.write({
+                type: 'data-progress',
+                data: {
+                  type: 'progress',
+                  label: `step-${stepIndex}`,
+                  status: 'complete',
+                  order: progressCounter++,
+                  message: 'Réponse terminée',
+                } satisfies ProgressAnnotation,
+              });
+            },
+          };
+
+          writer.write({
+            type: 'data-progress',
+            data: {
+              type: 'progress',
+              label: `step-${stepIndex}`,
+              status: 'in-progress',
+              order: progressCounter++,
+              message: `Étape 1 sur ${maxSteps} : réflexion en cours…`,
+            } satisfies ProgressAnnotation,
+          });
+
+          const result = await streamText({
+            messages: [...processedMessages],
+            env: context.cloudflare?.env,
+            options,
+            apiKeys,
+            files,
+            providerSettings,
+            promptId,
+            contextOptimization,
+            contextFiles: filteredFiles,
+            chatMode,
+            designScheme,
+            summary,
+            messageSliceId,
+          });
+
+          writer.merge(
+            result.toUIMessageStream({
+              /*
+               * Le SDK masque volontairement le vrai message par défaut ("An error
+               * occurred.", voir node_modules/ai/dist/index.js) pour ne jamais fuiter
+               * un détail serveur sensible — mais ça rendait TOUTE erreur (un outil
+               * qui échoue, le fournisseur LLM qui coupe en plein stream, etc.)
+               * totalement indiscernable d'une autre côté utilisateur. On renvoie ici
+               * le vrai message (sans stack ni détails internes) pour que l'UI et le
+               * runbook GitHub Actions/logs Render restent exploitables.
+               */
+              onError: (error: unknown) => {
+                const message = error instanceof Error ? error.message : String(error);
+                logger.error('streamText result error', error);
+
+                return message;
+              },
+            }),
+          );
+        })();
+
+        context.cloudflare?.ctx?.waitUntil(work);
+
+        await work;
       },
       onError: (error: unknown) => {
         const errorMessage = error instanceof Error ? error.message : 'Unknown error';
