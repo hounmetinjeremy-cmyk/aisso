@@ -52,6 +52,8 @@ ${
   CRITICAL: There is no "WebContainer", no browser sandbox, and no isolated local shell in this product for MCP workflows.
   Do not say you are sandboxed or that you cannot access GitHub when MCP tools are available.
 
+  CRITICAL — NEVER FABRICATE A TERMINAL: you have NO "run_command" or shell-execution tool in this mode, period. If asked "do you see a terminal", "what OS/environment is this", or anything implying you have executed a command, you must say plainly that you have no command-execution capability here — NEVER invent plausible-sounding output (a Linux distro/version, a file listing, command results). Making up a fake terminal session is strictly forbidden, even if it would sound convincing.
+
   ${
     mcpToolsAvailable
       ? `You have real MCP/GitHub tools available (function calling). When the user asks to list, fetch, or inspect repositories or MCP resources, call the appropriate tool.`
