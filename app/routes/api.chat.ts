@@ -9,6 +9,7 @@ import type { DesignScheme } from '~/types/design-scheme';
 import { MCPService, type MCPConfig } from '~/lib/services/mcpService';
 import { getGithubConnectionStatus, getGithubAccessToken } from '~/lib/.server/llm/github-tools';
 import { buildProjectIndexTools } from '~/lib/.server/llm/project-index-tools';
+import { buildGithubImportTools } from '~/lib/.server/llm/github-import-tools';
 import { tryExtractMcpFileRead, captureMcpFileRead } from '~/lib/.server/llm/mcp-file-capture.server';
 import { verifyFirebaseIdToken } from '~/lib/firebase-verify.server';
 import { getSupabaseAdmin } from '~/lib/supabase-admin.server';
@@ -104,6 +105,14 @@ async function chatAction({ context, request }: ActionFunctionArgs) {
           nextProgressOrder: () => progressCounter++,
         });
 
+        /*
+         * Uniquement en mode "build" (éditeur/boltArtifact) : permet au modèle
+         * d'ouvrir lui-même un dépôt GitHub existant déjà connecté (bouton
+         * "GitHub" du "+"), au lieu de renvoyer systématiquement l'utilisateur
+         * vers l'import manuel — voir github-import-tools.ts.
+         */
+        const githubImportTools = chatMode === 'build' ? buildGithubImportTools({ githubToken }) : {};
+
         const processedMessages = await mcpService.processToolInvocations(messages, writer);
 
         const filteredFiles: FileMap | undefined = files;
@@ -120,7 +129,7 @@ async function chatAction({ context, request }: ActionFunctionArgs) {
           toolChoice: 'auto' as const,
 
           // Exécution serveur directe des outils MCP (résultat réel, pas "Yes, approved.") + indexation projet
-          tools: { ...mcpService.tools, ...projectIndexTools },
+          tools: { ...mcpService.tools, ...projectIndexTools, ...githubImportTools },
           stopWhen: stepCountIs(maxSteps),
           onStepFinish: ({ toolCalls, toolResults }: { toolCalls: any[]; toolResults: any[] }) => {
             toolCalls.forEach((toolCall) => {
