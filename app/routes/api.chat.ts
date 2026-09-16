@@ -14,7 +14,7 @@ import { buildGithubActionsTools } from '~/lib/.server/llm/github-actions-tools'
 import { buildExecServiceTools } from '~/lib/.server/llm/exec-service-tools';
 import { buildVercelTools } from '~/lib/.server/llm/vercel-tools';
 import { getVercelAccessToken } from '~/lib/.server/llm/vercel-connection.server';
-import { describeToolCall } from '~/lib/.server/llm/describe-tool-call';
+import { describeToolCall, buildToolCallDetail } from '~/lib/.server/llm/describe-tool-call';
 import { tryExtractMcpFileRead, captureMcpFileRead } from '~/lib/.server/llm/mcp-file-capture.server';
 import { verifyFirebaseIdToken } from '~/lib/firebase-verify.server';
 import { getSupabaseAdmin } from '~/lib/supabase-admin.server';
@@ -224,6 +224,15 @@ async function chatAction({ context, request }: ActionFunctionArgs) {
                   toolCalls.length > 0
                     ? toolCalls.map((toolCall) => describeToolCall(toolCall)).join(' · ')
                     : `Étape ${stepIndex + 1} sur ${maxSteps} terminée`,
+                detail:
+                  toolCalls.length > 0
+                    ? toolCalls.map((toolCall) => {
+                        const result = (toolResults || []).find((r) => r?.toolCallId === toolCall.toolCallId)?.output;
+                        const { command, output } = buildToolCallDetail(toolCall, result);
+
+                        return { label: describeToolCall(toolCall), command, output };
+                      })
+                    : undefined,
               } satisfies ProgressAnnotation,
             });
 

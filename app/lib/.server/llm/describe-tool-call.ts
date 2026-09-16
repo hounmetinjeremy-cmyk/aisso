@@ -81,3 +81,73 @@ export function describeToolCall(toolCall: { toolName: string; input: unknown })
 
   return `Utilisé l'outil ${toolName}`;
 }
+
+/*
+ * Détail complet derrière la flèche de dépli PAR ÉTAPE (voir
+ * ProgressCompilation.tsx) — même principe que le popup "Bash" de Claude
+ * Code (Commande / Sortie) : le libellé court ci-dessus dit CE qui s'est
+ * passé, ceci montre la VRAIE commande et le VRAI résultat pour qui veut
+ * vérifier.
+ */
+
+const MAX_DETAIL_CHARS = 8000;
+
+function truncateDetail(text: string): string {
+  return text.length <= MAX_DETAIL_CHARS ? text : `${text.slice(0, MAX_DETAIL_CHARS)}\n… (tronqué)`;
+}
+
+function safeStringify(value: unknown): string {
+  if (typeof value === 'string') {
+    return value;
+  }
+
+  try {
+    return JSON.stringify(value, null, 2);
+  } catch {
+    return String(value);
+  }
+}
+
+export interface ToolCallDetail {
+  command: string;
+  output: string;
+}
+
+export function buildToolCallDetail(toolCall: { toolName: string; input: unknown }, result: unknown): ToolCallDetail {
+  const { toolName, input } = toolCall;
+  const args = (typeof input === 'object' && input !== null ? input : {}) as Record<string, unknown>;
+
+  if (toolName === 'run_command') {
+    const command = typeof args.command === 'string' ? args.command : safeStringify(input);
+    const cwd = typeof args.cwd === 'string' ? args.cwd : undefined;
+
+    const res = (typeof result === 'object' && result !== null ? result : {}) as Record<string, unknown>;
+    const stdout = typeof res.stdout === 'string' ? res.stdout : '';
+    const stderr = typeof res.stderr === 'string' ? res.stderr : '';
+    const exitCode = res.exitCode;
+
+    const outputParts: string[] = [];
+
+    if (stdout.trim()) {
+      outputParts.push(stdout.trim());
+    }
+
+    if (stderr.trim()) {
+      outputParts.push(`--- stderr ---\n${stderr.trim()}`);
+    }
+
+    if (typeof exitCode === 'number') {
+      outputParts.push(`(code de sortie : ${exitCode})`);
+    }
+
+    return {
+      command: cwd ? `cd ${cwd} && ${command}` : command,
+      output: truncateDetail(outputParts.join('\n\n') || '(aucune sortie)'),
+    };
+  }
+
+  return {
+    command: `${toolName}(${truncateDetail(safeStringify(input))})`,
+    output: truncateDetail(safeStringify(result)),
+  };
+}

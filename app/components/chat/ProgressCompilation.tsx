@@ -212,30 +212,55 @@ const ProgressItem = ({ progress, elapsedMs }: { progress: ProgressAnnotation; e
   const thinkingWord = useThinkingWord(isActive && isGeneric);
   const stepPrefix = progress.message.match(/^Étape \d+ sur \d+/i)?.[0];
   const label = isActive && isGeneric && stepPrefix ? `${stepPrefix} · ${thinkingWord}…` : progress.message;
+  const [showDetail, setShowDetail] = useState(false);
+  const hasDetail = (progress.detail?.length ?? 0) > 0;
 
   return (
-    <motion.div
-      className={classNames('flex text-sm gap-3 items-center justify-between')}
-      initial={{ opacity: 0 }}
-      animate={{ opacity: 1 }}
-      exit={{ opacity: 0 }}
-      transition={{ duration: 0.15 }}
-    >
-      <div className="flex items-center gap-1.5 min-w-0">
-        <div>
-          {progress.status === 'in-progress' ? (
-            <div className="i-svg-spinners:90-ring-with-bg"></div>
-          ) : progress.status === 'complete' ? (
-            <div className="i-ph:check"></div>
-          ) : progress.status === 'error' ? (
-            <div className="i-ph:x text-bolt-elements-icon-error"></div>
-          ) : null}
+    <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }} transition={{ duration: 0.15 }}>
+      <div className={classNames('flex text-sm gap-3 items-center justify-between')}>
+        <div className="flex items-center gap-1.5 min-w-0">
+          <div>
+            {progress.status === 'in-progress' ? (
+              <div className="i-svg-spinners:90-ring-with-bg"></div>
+            ) : progress.status === 'complete' ? (
+              <div className="i-ph:check"></div>
+            ) : progress.status === 'error' ? (
+              <div className="i-ph:x text-bolt-elements-icon-error"></div>
+            ) : null}
+          </div>
+          <span className={classNames('truncate', progress.status === 'error' ? 'text-bolt-elements-icon-error' : '')}>
+            {label}
+          </span>
         </div>
-        <span className={classNames('truncate', progress.status === 'error' ? 'text-bolt-elements-icon-error' : '')}>
-          {label}
-        </span>
+        <div className="flex items-center gap-2 shrink-0">
+          <span className="text-xs opacity-70 tabular-nums">{formatElapsed(elapsedMs)}</span>
+          {hasDetail && (
+            <button
+              onClick={(e) => {
+                e.stopPropagation();
+                setShowDetail((v) => !v);
+              }}
+              className="p-0.5 rounded hover:bg-bolt-elements-item-backgroundActive/50"
+              title="Voir le détail (commande, résultat réel)"
+            >
+              <div className={showDetail ? 'i-ph:caret-up-bold' : 'i-ph:caret-down-bold'} />
+            </button>
+          )}
+        </div>
       </div>
-      <span className="text-xs opacity-70 tabular-nums shrink-0">{formatElapsed(elapsedMs)}</span>
+      {hasDetail && showDetail && (
+        <div className="mt-1 mb-1.5 space-y-2 pl-5">
+          {progress.detail!.map((d, i) => (
+            <div key={i} className="text-xs">
+              <div className="opacity-70 mb-0.5">{d.label}</div>
+              <div className="bg-bolt-elements-background-depth-3 rounded p-2 font-mono overflow-x-auto">
+                <div className="opacity-80">$ {d.command}</div>
+                {d.output && <pre className="whitespace-pre-wrap mt-1 opacity-90">{d.output}</pre>}
+              </div>
+            </div>
+          ))}
+        </div>
+      )}
     </motion.div>
   );
 };

@@ -15,6 +15,9 @@ export type ProgressAnnotation = {
   status: 'in-progress' | 'complete' | 'error';
   order: number;
   message: string;
+
+  /** Détail réel par outil appelé pendant cette étape (commande/entrée + sortie/résultat) — derrière la flèche de dépli PAR ÉTAPE, voir ProgressCompilation.tsx. */
+  detail?: { label: string; command: string; output: string }[];
 };
 
 export type ToolCallAnnotation = {
