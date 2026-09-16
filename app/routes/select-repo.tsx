@@ -1,21 +1,55 @@
+import { useState } from 'react';
+import { Link, useNavigate } from '@remix-run/react';
+import { toast } from 'react-toastify';
 import { GitHubRepositorySelector } from '~/components/@settings/tabs/github/components/GitHubRepositorySelector';
-import { Link } from '@remix-run/react';
+import { useDeployToGitHub } from '~/lib/hooks/useDeployToGitHub.client';
 
 /**
- * Page affichée après connexion GitHub (OAuth MCP ou autre)
- * pour que l'utilisateur choisisse le dépôt à ouvrir / importer.
+ * Page affichée après connexion GitHub (OAuth MCP ou autre), et cible du
+ * bouton d'action rapide de secours envoyé par l'IA quand elle n'a pas pu
+ * importer un dépôt elle-même (voir github-import-tools.ts / prompts.ts) —
+ * pour que l'utilisateur choisisse et importe le dépôt en un clic.
+ *
+ * Avant ce correctif, le clic ici ne faisait que rediriger vers `/` avec un
+ * paramètre `importRepo` que rien ne lisait nulle part : aucun import ne se
+ * produisait réellement. Fait maintenant le même import que le panneau
+ * "+" (PlusToolsMenu.tsx/DeployPanel) — mêmes hooks, même mécanisme
+ * (workbenchStore.createFiles + saveSelectedRepo côté import).
  */
-export default function SelectRepoPage() {
-  const handleClone = (repoUrl: string, branch?: string) => {
-    // Passe le dépôt choisi à l'app principale (query params)
-    const params = new URLSearchParams();
-    params.set('importRepo', repoUrl);
 
-    if (branch) {
-      params.set('branch', branch);
+/** cloneUrl est toujours "https://github.com/OWNER/REPO.git" (voir GitHubRepositorySelector). */
+function parseCloneUrl(cloneUrl: string): { owner: string; repo: string } | null {
+  const match = cloneUrl.match(/github\.com\/([^/]+)\/([^/]+?)(?:\.git)?$/);
+  return match ? { owner: match[1], repo: match[2] } : null;
+}
+
+export default function SelectRepoPage() {
+  const { importRepo } = useDeployToGitHub();
+  const [importing, setImporting] = useState(false);
+  const navigate = useNavigate();
+
+  const handleClone = async (cloneUrl: string, branch?: string) => {
+    const parsed = parseCloneUrl(cloneUrl);
+
+    if (!parsed || !branch) {
+      toast.error('Dépôt ou branche invalide.');
+      return;
     }
 
-    window.location.href = `/?${params.toString()}`;
+    setImporting(true);
+
+    try {
+      const { importedCount, skipped } = await importRepo({ owner: parsed.owner, repo: parsed.repo, branch });
+      toast.success(
+        `${importedCount} fichier${importedCount > 1 ? 's' : ''} importé${importedCount > 1 ? 's' : ''}` +
+          (skipped > 0 ? ` (${skipped} ignoré${skipped > 1 ? 's' : ''}, binaires ou trop volumineux)` : ''),
+      );
+      navigate('/');
+    } catch (error) {
+      toast.error(error instanceof Error ? error.message : "L'import a échoué.");
+    } finally {
+      setImporting(false);
+    }
   };
 
   return (
@@ -36,7 +70,12 @@ export default function SelectRepoPage() {
           </Link>
         </div>
 
-        <div className="rounded-xl border border-bolt-elements-borderColor bg-bolt-elements-background-depth-2 p-4 sm:p-6">
+        <div className="rounded-xl border border-bolt-elements-borderColor bg-bolt-elements-background-depth-2 p-4 sm:p-6 relative">
+          {importing && (
+            <div className="absolute inset-0 z-10 flex items-center justify-center bg-bolt-elements-background-depth-2/80 rounded-xl text-sm text-bolt-elements-textSecondary">
+              Import en cours…
+            </div>
+          )}
           <GitHubRepositorySelector onClone={handleClone} />
         </div>
       </div>
