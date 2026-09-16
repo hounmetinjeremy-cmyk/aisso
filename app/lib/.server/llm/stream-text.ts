@@ -156,6 +156,9 @@ export async function streamText(props: {
   // run_command (exec-service, voir exec-service-tools.ts) est dans les outils passés à ce tour — un vrai terminal existe.
   const hasExecService = Object.prototype.hasOwnProperty.call(options?.tools || {}, 'run_command');
 
+  // deploy_to_vercel (voir vercel-tools.ts) n'est dans les outils que si un compte Vercel "app" est connecté.
+  const hasVercelConnected = Object.prototype.hasOwnProperty.call(options?.tools || {}, 'deploy_to_vercel');
+
   let systemPrompt =
     PromptLibrary.getPromptFromLibrary(promptId || 'default', {
       cwd: WORK_DIR,
@@ -174,6 +177,7 @@ export async function streamText(props: {
       },
       mcpToolsAvailable,
       hasExecService,
+      hasVercelConnected,
     }) ?? getSystemPrompt();
 
   if (chatMode === 'build' && contextFiles && contextOptimization) {

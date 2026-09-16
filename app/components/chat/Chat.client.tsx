@@ -6,7 +6,7 @@ import { memo, useCallback, useEffect, useRef, useState } from 'react';
 import { toast } from 'react-toastify';
 import { toastErrorThrottled } from '~/utils/throttledToastError';
 import { useMessageParser, usePromptEnhancer, useShortcuts } from '~/lib/hooks';
-import { description, useChatHistory } from '~/lib/persistence';
+import { description, useChatHistory, chatId } from '~/lib/persistence';
 import { chatStore } from '~/lib/stores/chat';
 import { workbenchStore } from '~/lib/stores/workbench';
 import { DEFAULT_MODEL, DEFAULT_PROVIDER, PROMPT_COOKIE_KEY, PROVIDER_LIST, WORK_DIR } from '~/utils/constants';
@@ -276,6 +276,9 @@ export const ChatImpl = memo(
           maxLLMSteps: mcpSettings.maxLLMSteps,
           mcpConfig: mcpSettings.mcpConfig,
           firebaseIdToken,
+
+          // Sert de graine stable de nom de projet pour deploy_to_vercel (voir vercel-tools.ts) — même logique que useVercelDeploy.
+          chatId: chatId.get(),
         }),
       }),
       onError: (e) => {

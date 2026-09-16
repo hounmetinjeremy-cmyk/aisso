@@ -25,6 +25,9 @@ export interface PromptOptions {
 
   /** run_command (exec-service, voir exec-service-tools.ts) est dans les outils passés — un vrai terminal existe pour ce tour. */
   hasExecService?: boolean;
+
+  /** deploy_to_vercel/list_vercel_projects/get_vercel_deployment_status (voir vercel-tools.ts) — compte Vercel "app" connecté. */
+  hasVercelConnected?: boolean;
 }
 
 export class PromptLibrary {
@@ -47,6 +50,7 @@ export class PromptLibrary {
           options.github,
           options.mcpToolsAvailable,
           options.hasExecService,
+          options.hasVercelConnected,
         ),
     },
     original: {
@@ -60,6 +64,7 @@ export class PromptLibrary {
           options.github,
           options.mcpToolsAvailable,
           options.hasExecService,
+          options.hasVercelConnected,
         ),
     },
     optimized: {

@@ -17,8 +17,17 @@ export const getFineTunedPrompt = (
   github?: { isConnected: boolean; username: string | null },
   mcpToolsAvailable?: boolean,
   hasExecService?: boolean,
+  hasVercelConnected?: boolean,
 ) => {
-  const base = getSystemPrompt(cwd, supabase, designScheme, github, mcpToolsAvailable, hasExecService);
+  const base = getSystemPrompt(
+    cwd,
+    supabase,
+    designScheme,
+    github,
+    mcpToolsAvailable,
+    hasExecService,
+    hasVercelConnected,
+  );
 
   const mcpBlock = mcpToolsAvailable
     ? `

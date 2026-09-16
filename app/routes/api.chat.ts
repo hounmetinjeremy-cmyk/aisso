@@ -12,6 +12,8 @@ import { buildProjectIndexTools } from '~/lib/.server/llm/project-index-tools';
 import { buildGithubImportTools } from '~/lib/.server/llm/github-import-tools';
 import { buildGithubActionsTools } from '~/lib/.server/llm/github-actions-tools';
 import { buildExecServiceTools } from '~/lib/.server/llm/exec-service-tools';
+import { buildVercelTools } from '~/lib/.server/llm/vercel-tools';
+import { getVercelAccessToken } from '~/lib/.server/llm/vercel-connection.server';
 import { describeToolCall } from '~/lib/.server/llm/describe-tool-call';
 import { tryExtractMcpFileRead, captureMcpFileRead } from '~/lib/.server/llm/mcp-file-capture.server';
 import { verifyFirebaseIdToken } from '~/lib/firebase-verify.server';
@@ -38,6 +40,7 @@ async function chatAction({ context, request }: ActionFunctionArgs) {
       mcpConfig,
       apiKeys: clientApiKeys,
       providerSettings: clientProviderSettings,
+      chatId,
     } = body as {
       messages: UIMessage[];
       files?: FileMap;
@@ -50,6 +53,7 @@ async function chatAction({ context, request }: ActionFunctionArgs) {
       mcpConfig?: MCPConfig;
       apiKeys?: Record<string, string>;
       providerSettings?: Record<string, IProviderSetting>;
+      chatId?: string;
     };
 
     const apiKeys = clientApiKeys || {};
@@ -67,13 +71,16 @@ async function chatAction({ context, request }: ActionFunctionArgs) {
 
     const env = context.cloudflare?.env as Env | undefined;
 
-    const [githubConnection, githubToken] = await Promise.all([
+    const [githubConnection, githubToken, vercelToken] = await Promise.all([
       getGithubConnectionStatus(env as any, userId).catch(() => ({
         isConnected: false,
         username: null as string | null,
       })),
       getGithubAccessToken(env as any, userId).catch(() => null),
+      getVercelAccessToken(env as any, userId).catch(() => null),
     ]);
+
+    const origin = new URL(request.url).origin;
 
     const stream = createUIMessageStream({
       execute: async ({ writer }) => {
@@ -149,6 +156,15 @@ async function chatAction({ context, request }: ActionFunctionArgs) {
               })
             : {};
 
+        /*
+         * Compte Vercel "app" (voir vercel-connection.server.ts) — distinct
+         * d'un serveur MCP tiers. `files` (déjà reçu côté serveur pour ce
+         * tour) permet à deploy_to_vercel de fonctionner sans dépendre du
+         * WebContainer dont dépend le bouton "Déployer" existant (cassé en
+         * production, voir vercel-tools.ts).
+         */
+        const vercelTools = chatMode === 'build' ? buildVercelTools({ vercelToken, files, chatId, origin }) : {};
+
         const processedMessages = await mcpService.processToolInvocations(messages, writer);
 
         const filteredFiles: FileMap | undefined = files;
@@ -171,6 +187,7 @@ async function chatAction({ context, request }: ActionFunctionArgs) {
             ...githubImportTools,
             ...githubActionsTools,
             ...execServiceTools,
+            ...vercelTools,
           },
           stopWhen: stepCountIs(maxSteps),
           onStepFinish: ({ toolCalls, toolResults }: { toolCalls: any[]; toolResults: any[] }) => {
