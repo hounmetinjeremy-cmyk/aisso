@@ -3,6 +3,7 @@ import { useState, useEffect, useCallback } from 'react';
 import { atom } from 'nanostores';
 import { generateId, type UIMessage } from 'ai';
 import { toast } from 'react-toastify';
+import { toastErrorThrottled } from '~/utils/throttledToastError';
 import { workbenchStore } from '~/lib/stores/workbench';
 import { logStore } from '~/lib/stores/logs'; // Import logStore
 import { useAuth } from '~/lib/hooks/useAuth.client';
@@ -209,7 +210,7 @@ ${value.content}
         await setSnapshot(db, id, snapshot);
       } catch (error) {
         console.error('Failed to save snapshot:', error);
-        toast.error('Failed to save chat snapshot.');
+        toastErrorThrottled('Failed to save chat snapshot.');
       }
     },
     [db],

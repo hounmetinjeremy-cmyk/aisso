@@ -12,7 +12,12 @@ const messageParser = new EnhancedStreamingMessageParser({
     onArtifactOpen: (data) => {
       logger.trace('onArtifactOpen', data);
 
-      workbenchStore.showWorkbench.set(true);
+      /*
+       * Ne PAS ouvrir automatiquement l'éditeur — l'utilisateur veut y entrer
+       * lui-même quand il le souhaite, pas se le faire imposer à chaque fois
+       * que l'IA écrit un fichier. Les fichiers restent quand même à jour
+       * dans workbenchStore, juste pas affichés de force.
+       */
       workbenchStore.addArtifact(data);
     },
     onArtifactClose: (data) => {
