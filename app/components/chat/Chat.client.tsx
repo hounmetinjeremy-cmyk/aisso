@@ -42,6 +42,35 @@ export function Chat() {
   const title = useStore(description);
   useEffect(() => {
     workbenchStore.setReloadedMessages(initialMessages.map((m) => m.id));
+
+    /*
+     * <boltAction type="file"> reconstruit tout seul au rechargement, parce
+     * que son contenu vit dans le TEXTE du message (reparsé par
+     * useMessageParser). Un import/sync (data-import-files/data-sync-files,
+     * voir ChatImpl -> onData) n'a pas cette chance : ce sont des data parts
+     * appliquées à workbenchStore SEULEMENT pendant le flux en direct — le
+     * message sauvegardé les contient bien, mais rien ne les rejoue au
+     * chargement. Sans ça, un import/sync survit à la conversation mais
+     * disparaît de l'éditeur dès qu'on recharge la page.
+     */
+    for (const message of initialMessages) {
+      for (const part of message.parts ?? []) {
+        const dataPart = part as any;
+
+        if (dataPart.type !== 'data-import-files' && dataPart.type !== 'data-sync-files') {
+          continue;
+        }
+
+        const files = dataPart.data?.files as { path: string; content: string; isBinary?: boolean }[] | undefined;
+
+        if (files?.length) {
+          void workbenchStore.createFiles(
+            files.map((file) => ({ path: `${WORK_DIR}/${file.path}`, content: file.content, isBinary: file.isBinary })),
+            'reload-restore',
+          );
+        }
+      }
+    }
   }, [initialMessages]);
 
   return (
