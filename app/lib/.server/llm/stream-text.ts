@@ -153,6 +153,9 @@ export async function streamText(props: {
    */
   const mcpToolsAvailable = Object.keys(options?.tools || {}).length > 0;
 
+  // run_command (exec-service, voir exec-service-tools.ts) est dans les outils passés à ce tour — un vrai terminal existe.
+  const hasExecService = Object.prototype.hasOwnProperty.call(options?.tools || {}, 'run_command');
+
   let systemPrompt =
     PromptLibrary.getPromptFromLibrary(promptId || 'default', {
       cwd: WORK_DIR,
@@ -170,6 +173,7 @@ export async function streamText(props: {
         hasDeployTarget: options?.githubConnection?.hasDeployTarget || false,
       },
       mcpToolsAvailable,
+      hasExecService,
     }) ?? getSystemPrompt();
 
   if (chatMode === 'build' && contextFiles && contextOptimization) {

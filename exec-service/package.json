@@ -1,0 +1,17 @@
+{
+  "name": "aisso-exec-service",
+  "version": "1.0.0",
+  "private": true,
+  "description": "Petit service HTTP séparé (déployé sur Render.com) qui exécute de vraies commandes shell et renvoie stdout/stderr/code de sortie — sert de terminal réel à Aïsso, qui ne peut pas en avoir un dans son Worker Cloudflare. Protégé par un jeton secret partagé (EXEC_SERVICE_TOKEN), jamais exposé au navigateur.",
+  "type": "commonjs",
+  "main": "server.js",
+  "scripts": {
+    "start": "node server.js"
+  },
+  "engines": {
+    "node": ">=20"
+  },
+  "dependencies": {
+    "express": "^4.21.2"
+  }
+}

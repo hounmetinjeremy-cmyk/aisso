@@ -16,8 +16,9 @@ export const getFineTunedPrompt = (
   designScheme?: DesignScheme,
   github?: { isConnected: boolean; username: string | null },
   mcpToolsAvailable?: boolean,
+  hasExecService?: boolean,
 ) => {
-  const base = getSystemPrompt(cwd, supabase, designScheme, github, mcpToolsAvailable);
+  const base = getSystemPrompt(cwd, supabase, designScheme, github, mcpToolsAvailable, hasExecService);
 
   const mcpBlock = mcpToolsAvailable
     ? `

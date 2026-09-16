@@ -27,4 +27,10 @@ interface Env {
   VERCEL_OAUTH_CLIENT_SECRET: string;
   VERCEL_INTEGRATION_SLUG: string;
   APP_BASE_URL: string;
+
+  /** URL du service d'exécution séparé (Render.com) — voir exec-service/README.md. Optionnel : absent = pas de terminal réel. */
+  EXEC_SERVICE_URL: string;
+
+  /** Jeton partagé avec exec-service (Authorization: Bearer) — jamais exposé au client. */
+  EXEC_SERVICE_TOKEN: string;
 }

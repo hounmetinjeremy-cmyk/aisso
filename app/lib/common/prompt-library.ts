@@ -22,6 +22,9 @@ export interface PromptOptions {
     hasDeployTarget?: boolean;
   };
   mcpToolsAvailable?: boolean;
+
+  /** run_command (exec-service, voir exec-service-tools.ts) est dans les outils passés — un vrai terminal existe pour ce tour. */
+  hasExecService?: boolean;
 }
 
 export class PromptLibrary {
@@ -43,13 +46,21 @@ export class PromptLibrary {
           options.designScheme,
           options.github,
           options.mcpToolsAvailable,
+          options.hasExecService,
         ),
     },
     original: {
       label: 'Old Default Prompt',
       description: 'The OG battle tested default system Prompt',
       get: (options) =>
-        getSystemPrompt(options.cwd, options.supabase, options.designScheme, options.github, options.mcpToolsAvailable),
+        getSystemPrompt(
+          options.cwd,
+          options.supabase,
+          options.designScheme,
+          options.github,
+          options.mcpToolsAvailable,
+          options.hasExecService,
+        ),
     },
     optimized: {
       label: 'Optimized Prompt (experimental)',

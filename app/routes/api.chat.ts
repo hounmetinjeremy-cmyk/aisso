@@ -11,6 +11,7 @@ import { getGithubConnectionStatus, getGithubAccessToken } from '~/lib/.server/l
 import { buildProjectIndexTools } from '~/lib/.server/llm/project-index-tools';
 import { buildGithubImportTools } from '~/lib/.server/llm/github-import-tools';
 import { buildGithubActionsTools } from '~/lib/.server/llm/github-actions-tools';
+import { buildExecServiceTools } from '~/lib/.server/llm/exec-service-tools';
 import { tryExtractMcpFileRead, captureMcpFileRead } from '~/lib/.server/llm/mcp-file-capture.server';
 import { verifyFirebaseIdToken } from '~/lib/firebase-verify.server';
 import { getSupabaseAdmin } from '~/lib/supabase-admin.server';
@@ -132,6 +133,20 @@ async function chatAction({ context, request }: ActionFunctionArgs) {
          */
         const githubActionsTools = chatMode === 'build' ? buildGithubActionsTools({ githubToken }) : {};
 
+        /*
+         * Vrai terminal (voir exec-service-tools.ts) — n'existe que si
+         * EXEC_SERVICE_URL/EXEC_SERVICE_TOKEN sont configurés (secrets
+         * Cloudflare, voir exec-service/README.md) ; sinon {} et le modèle
+         * retombe sur githubActionsTools (lecture seule) ci-dessus.
+         */
+        const execServiceTools =
+          chatMode === 'build'
+            ? buildExecServiceTools({
+                execServiceUrl: env?.EXEC_SERVICE_URL ?? null,
+                execServiceToken: env?.EXEC_SERVICE_TOKEN ?? null,
+              })
+            : {};
+
         const processedMessages = await mcpService.processToolInvocations(messages, writer);
 
         const filteredFiles: FileMap | undefined = files;
@@ -148,7 +163,13 @@ async function chatAction({ context, request }: ActionFunctionArgs) {
           toolChoice: 'auto' as const,
 
           // Exécution serveur directe des outils MCP (résultat réel, pas "Yes, approved.") + indexation projet
-          tools: { ...mcpService.tools, ...projectIndexTools, ...githubImportTools, ...githubActionsTools },
+          tools: {
+            ...mcpService.tools,
+            ...projectIndexTools,
+            ...githubImportTools,
+            ...githubActionsTools,
+            ...execServiceTools,
+          },
           stopWhen: stepCountIs(maxSteps),
           onStepFinish: ({ toolCalls, toolResults }: { toolCalls: any[]; toolResults: any[] }) => {
             toolCalls.forEach((toolCall) => {

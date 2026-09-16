@@ -64,3 +64,9 @@ GITHUB_OAUTH_CLIENT_SECRET=
 VERCEL_OAUTH_CLIENT_ID=
 VERCEL_OAUTH_CLIENT_SECRET=
 VERCEL_INTEGRATION_SLUG=
+
+# Terminal réel (mode "build" uniquement) — service séparé déployé sur
+# Render.com, voir exec-service/README.md. Optionnel : absent = pas de
+# terminal, l'IA reste sur GitHub Actions en lecture seule.
+EXEC_SERVICE_URL=
+EXEC_SERVICE_TOKEN=
