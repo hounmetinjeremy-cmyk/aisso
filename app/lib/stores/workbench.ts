@@ -102,6 +102,20 @@ export class WorkbenchStore {
     return touched;
   }
 
+  /**
+   * Meme accumulateur que takeFilesTouchedThisTurn, mais pour des fichiers
+   * ecrits par un autre chemin que <boltAction type="file"> (ex: la
+   * synchronisation terminal -> editeur, voir sync_terminal_files_to_editor
+   * dans exec-service-tools.ts) — sans ca, ce travail reste visible dans
+   * l'editeur mais jamais pousse par autoPushToGitHub (Chat.client.tsx), qui
+   * ne lit que cet accumulateur.
+   */
+  markFilesTouched(paths: string[]): void {
+    for (const path of paths) {
+      this.#filesTouchedThisTurn.add(path);
+    }
+  }
+
   get files() {
     return this.#filesStore.files;
   }

@@ -325,14 +325,27 @@ export const ChatImpl = memo(
          * saveSelectedRepo ici.
          */
         if ((dataPart as any).type === 'data-sync-files') {
-          const { files } = (dataPart as any).data as {
+          const { files, markAsChanged } = (dataPart as any).data as {
             files: { path: string; content: string; isBinary?: boolean }[];
+            markAsChanged?: boolean;
           };
 
+          const fullPaths = files.map((file) => `${WORK_DIR}/${file.path}`);
+
           void workbenchStore.createFiles(
-            files.map((file) => ({ path: `${WORK_DIR}/${file.path}`, content: file.content, isBinary: file.isBinary })),
+            files.map((file, i) => ({ path: fullPaths[i], content: file.content, isBinary: file.isBinary })),
             'terminal-sync',
           );
+
+          /*
+           * Sans ça, ce travail resterait visible dans l'éditeur mais jamais
+           * poussé par autoPushToGitHub (plus bas), qui ne lit que les
+           * fichiers marqués "touchés" — voir markAsChanged dans
+           * exec-service-tools.ts.
+           */
+          if (markAsChanged) {
+            workbenchStore.markFilesTouched(fullPaths);
+          }
 
           return;
         }
