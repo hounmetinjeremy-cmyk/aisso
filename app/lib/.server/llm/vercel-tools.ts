@@ -125,6 +125,126 @@ export function buildVercelTools(params: {
       },
     }),
 
+    list_vercel_deployments: tool({
+      description:
+        "Liste l'historique des derniers déploiements Vercel d'un projet (pas juste le dernier) avec leur état et date — utile pour voir si un déploiement récent a réussi après une correction, comparer plusieurs tentatives, ou retrouver l'id d'un déploiement précédent.",
+      inputSchema: z.object({
+        projectId: z.string().describe('Id ou nom exact du projet Vercel (voir list_vercel_projects si inconnu)'),
+        limit: z.number().optional().describe('Nombre de déploiements à lister — omis = 10'),
+      }),
+      execute: async ({ projectId, limit }) => {
+        try {
+          const res = await fetch(
+            `https://api.vercel.com/v6/deployments?projectId=${encodeURIComponent(projectId)}&limit=${limit ?? 10}`,
+            { headers: vercelHeaders },
+          );
+
+          if (!res.ok) {
+            return { message: `L'API Vercel a répondu HTTP ${res.status} pour le projet "${projectId}".` };
+          }
+
+          const data = await res.json<{
+            deployments: { uid: string; state: string; url: string; createdAt: number }[];
+          }>();
+
+          if (data.deployments.length === 0) {
+            return { message: `Aucun déploiement trouvé pour "${projectId}" — ce projet n'a jamais été déployé.` };
+          }
+
+          return {
+            deployments: data.deployments.map((d) => ({
+              id: d.uid,
+              state: d.state,
+              url: `https://${d.url}`,
+              createdAt: new Date(d.createdAt).toISOString(),
+            })),
+          };
+        } catch (error) {
+          return {
+            message: `Échec de l'appel à l'API Vercel : ${error instanceof Error ? error.message : 'erreur inconnue'}`,
+          };
+        }
+      },
+    }),
+
+    list_vercel_env_vars: tool({
+      description:
+        "Liste les NOMS (pas les valeurs, pour ne jamais exposer de secrets dans la conversation) des variables d'environnement configurées sur un projet Vercel, avec leur cible (production/preview/development). Utilise ceci quand un déploiement échoue avec une erreur du type \"variable manquante\" ou \"undefined\" en prod, pour voir si la variable existe vraiment côté Vercel avant de blâmer le code.",
+      inputSchema: z.object({
+        projectId: z.string().describe('Id ou nom exact du projet Vercel (voir list_vercel_projects si inconnu)'),
+      }),
+      execute: async ({ projectId }) => {
+        try {
+          const res = await fetch(
+            `https://api.vercel.com/v9/projects/${encodeURIComponent(projectId)}/env`,
+            { headers: vercelHeaders },
+          );
+
+          if (!res.ok) {
+            return { message: `L'API Vercel a répondu HTTP ${res.status} en listant les variables d'environnement de "${projectId}".` };
+          }
+
+          const data = await res.json<{ envs: { key: string; target: string[]; type: string }[] }>();
+
+          return {
+            envVars: data.envs.map((e) => ({ key: e.key, target: e.target, type: e.type })),
+            message:
+              data.envs.length === 0
+                ? `Aucune variable d'environnement configurée sur "${projectId}".`
+                : `${data.envs.length} variable(s) trouvée(s). Valeurs masquées volontairement — utilise set_vercel_env_var pour en créer ou corriger une.`,
+          };
+        } catch (error) {
+          return {
+            message: `Échec de l'appel à l'API Vercel : ${error instanceof Error ? error.message : 'erreur inconnue'}`,
+          };
+        }
+      },
+    }),
+
+    set_vercel_env_var: tool({
+      description:
+        "Crée ou met à jour une variable d'environnement sur un projet Vercel (type 'encrypted' par défaut, jamais loguée en clair côté Vercel). Utilise ceci quand get_vercel_deployment_logs montre qu'une variable manque ou est mal configurée en production — après avoir créé/modifié une variable, il faut redéployer (deploy_to_vercel, ou un push si le dépôt est lié) pour qu'elle prenne effet, les déploiements existants ne se mettent pas à jour tout seuls.",
+      inputSchema: z.object({
+        projectId: z.string().describe('Id ou nom exact du projet Vercel (voir list_vercel_projects si inconnu)'),
+        key: z.string().describe("Nom de la variable, ex: SUPABASE_SERVICE_ROLE_KEY"),
+        value: z.string().describe('Valeur de la variable'),
+        target: z
+          .array(z.enum(['production', 'preview', 'development']))
+          .optional()
+          .describe("Environnements ciblés — omis = ['production', 'preview', 'development']"),
+      }),
+      execute: async ({ projectId, key, value, target }) => {
+        try {
+          const res = await fetch(`https://api.vercel.com/v10/projects/${encodeURIComponent(projectId)}/env`, {
+            method: 'POST',
+            headers: vercelHeaders,
+            body: JSON.stringify({
+              key,
+              value,
+              type: 'encrypted',
+              target: target ?? ['production', 'preview', 'development'],
+            }),
+          });
+
+          const data = await res.json<{ key?: string; error?: { message?: string } }>();
+
+          if (!res.ok) {
+            return {
+              message: `Échec de la création/mise à jour de la variable "${key}" : ${data.error?.message ?? `HTTP ${res.status}`}`,
+            };
+          }
+
+          return {
+            message: `Variable "${key}" enregistrée sur "${projectId}". Redéploie maintenant (deploy_to_vercel, ou un push si le dépôt est lié) pour qu'elle prenne effet — les déploiements déjà en ligne ne se mettent pas à jour tout seuls.`,
+          };
+        } catch (error) {
+          return {
+            message: `Échec de l'appel à l'API Vercel : ${error instanceof Error ? error.message : 'erreur inconnue'}`,
+          };
+        }
+      },
+    }),
+
     get_vercel_deployment_logs: tool({
       description:
         "Lit les VRAIS logs de build du dernier déploiement Vercel d'un projet (ou d'un déploiement précis via deploymentId), pour voir l'erreur exacte (dépendance manquante, erreur TypeScript, commande de build qui échoue, etc.). Utilise ceci juste après get_vercel_deployment_status quand state=ERROR, AVANT de corriger le code — ne devine jamais la cause d'une erreur de build sans avoir lu ces logs. Ne couvre que les logs de BUILD, pas les logs runtime après mise en ligne.",
