@@ -184,10 +184,10 @@ export function buildVercelTools(params: {
             return { message: `L'API Vercel a répondu HTTP ${res.status} en listant les variables d'environnement de "${projectId}".` };
           }
 
-          const data = await res.json<{ envs: { key: string; target: string[]; type: string }[] }>();
+          const data = await res.json<{ envs: { id: string; key: string; target: string[]; type: string }[] }>();
 
           return {
-            envVars: data.envs.map((e) => ({ key: e.key, target: e.target, type: e.type })),
+            envVars: data.envs.map((e) => ({ id: e.id, key: e.key, target: e.target, type: e.type })),
             message:
               data.envs.length === 0
                 ? `Aucune variable d'environnement configurée sur "${projectId}".`
@@ -420,6 +420,166 @@ export function buildVercelTools(params: {
         } catch (error) {
           return {
             message: `Échec de l'appel à /api/vercel-deploy : ${error instanceof Error ? error.message : 'erreur inconnue'}`,
+          };
+        }
+      },
+    }),
+    redeploy_vercel_deployment: tool({
+      description:
+        "Relance un déploiement Vercel EXISTANT tel quel (mêmes fichiers, nouveau build) sans renvoyer les fichiers — plus rapide que deploy_to_vercel quand le code n'a pas changé et qu'on veut juste retenter un build qui a échoué pour une raison transitoire (timeout, erreur réseau Vercel). Si le code a changé, utilise deploy_to_vercel ou un push à la place.",
+      inputSchema: z.object({
+        deploymentId: z.string().describe('Id du déploiement à relancer (voir list_vercel_deployments)'),
+        name: z.string().describe('Nom du projet Vercel (le même que le déploiement relancé)'),
+      }),
+      execute: async ({ deploymentId, name }) => {
+        try {
+          const res = await fetch('https://api.vercel.com/v13/deployments', {
+            method: 'POST',
+            headers: vercelHeaders,
+            body: JSON.stringify({ name, deploymentId, target: 'production' }),
+          });
+
+          const data = await res.json<{ id?: string; url?: string; error?: { message?: string } }>();
+
+          if (!res.ok || !data.id) {
+            return { message: `Échec de la relance du déploiement : ${data.error?.message ?? `HTTP ${res.status}`}` };
+          }
+
+          return {
+            deploymentId: data.id,
+            url: `https://${data.url}`,
+            message: `Nouveau déploiement lancé (id ${data.id}) à partir de "${deploymentId}". Vérifie avec get_vercel_deployment_status dans quelques instants.`,
+          };
+        } catch (error) {
+          return {
+            message: `Échec de l'appel à l'API Vercel : ${error instanceof Error ? error.message : 'erreur inconnue'}`,
+          };
+        }
+      },
+    }),
+
+    cancel_vercel_deployment: tool({
+      description:
+        "Annule un déploiement Vercel en cours (state=BUILDING/QUEUED) qui semble bloqué ou parti dans la mauvaise direction, avant de relancer proprement.",
+      inputSchema: z.object({
+        deploymentId: z.string().describe('Id du déploiement à annuler (voir list_vercel_deployments)'),
+      }),
+      execute: async ({ deploymentId }) => {
+        try {
+          const res = await fetch(`https://api.vercel.com/v12/deployments/${encodeURIComponent(deploymentId)}/cancel`, {
+            method: 'PATCH',
+            headers: vercelHeaders,
+          });
+
+          if (!res.ok) {
+            const data = await res.json<{ error?: { message?: string } }>().catch(() => ({}) as any);
+            return { message: `Échec de l'annulation : ${data.error?.message ?? `HTTP ${res.status}`}` };
+          }
+
+          return { message: `Déploiement "${deploymentId}" annulé.` };
+        } catch (error) {
+          return {
+            message: `Échec de l'appel à l'API Vercel : ${error instanceof Error ? error.message : 'erreur inconnue'}`,
+          };
+        }
+      },
+    }),
+
+    delete_vercel_env_var: tool({
+      description:
+        "Supprime une variable d'environnement d'un projet Vercel (par son id, voir list_vercel_env_vars) — utile pour nettoyer une variable obsolète ou mal nommée avant d'en recréer une correcte avec set_vercel_env_var.",
+      inputSchema: z.object({
+        projectId: z.string().describe('Id ou nom exact du projet Vercel'),
+        envVarId: z.string().describe("Id de la variable à supprimer (voir list_vercel_env_vars)"),
+      }),
+      execute: async ({ projectId, envVarId }) => {
+        try {
+          const res = await fetch(
+            `https://api.vercel.com/v9/projects/${encodeURIComponent(projectId)}/env/${encodeURIComponent(envVarId)}`,
+            { method: 'DELETE', headers: vercelHeaders },
+          );
+
+          if (!res.ok) {
+            return { message: `Échec de la suppression de la variable : HTTP ${res.status}` };
+          }
+
+          return { message: `Variable "${envVarId}" supprimée de "${projectId}". Redéploie pour appliquer.` };
+        } catch (error) {
+          return {
+            message: `Échec de l'appel à l'API Vercel : ${error instanceof Error ? error.message : 'erreur inconnue'}`,
+          };
+        }
+      },
+    }),
+
+    list_vercel_domains: tool({
+      description: "Liste les domaines (par défaut .vercel.app et personnalisés) déjà attachés à un projet Vercel.",
+      inputSchema: z.object({
+        projectId: z.string().describe('Id ou nom exact du projet Vercel'),
+      }),
+      execute: async ({ projectId }) => {
+        try {
+          const res = await fetch(`https://api.vercel.com/v9/projects/${encodeURIComponent(projectId)}/domains`, {
+            headers: vercelHeaders,
+          });
+
+          if (!res.ok) {
+            return { message: `L'API Vercel a répondu HTTP ${res.status} en listant les domaines de "${projectId}".` };
+          }
+
+          const data = await res.json<{ domains: { name: string; verified: boolean }[] }>();
+
+          return {
+            domains: data.domains.map((d) => ({ name: d.name, verified: d.verified })),
+            message:
+              data.domains.length === 0
+                ? `Aucun domaine personnalisé sur "${projectId}" — seule l'URL .vercel.app par défaut existe.`
+                : `${data.domains.length} domaine(s) trouvé(s).`,
+          };
+        } catch (error) {
+          return {
+            message: `Échec de l'appel à l'API Vercel : ${error instanceof Error ? error.message : 'erreur inconnue'}`,
+          };
+        }
+      },
+    }),
+
+    add_vercel_domain: tool({
+      description:
+        "Attache un nom de domaine personnalisé à un projet Vercel. Ne configure PAS le DNS côté registrar (LWS, etc.) — ça reste à faire manuellement par l'utilisateur (pointer un CNAME/A record vers Vercel) ; renvoie les instructions DNS exactes fournies par Vercel si la vérification échoue.",
+      inputSchema: z.object({
+        projectId: z.string().describe('Id ou nom exact du projet Vercel'),
+        domain: z.string().describe('Nom de domaine à attacher, ex: formoney.site ou www.formoney.site'),
+      }),
+      execute: async ({ projectId, domain }) => {
+        try {
+          const res = await fetch(`https://api.vercel.com/v10/projects/${encodeURIComponent(projectId)}/domains`, {
+            method: 'POST',
+            headers: vercelHeaders,
+            body: JSON.stringify({ name: domain }),
+          });
+
+          const data = await res.json<{
+            name?: string;
+            verified?: boolean;
+            verification?: { type: string; domain: string; value: string }[];
+            error?: { message?: string };
+          }>();
+
+          if (!res.ok) {
+            return { message: `Échec de l'ajout du domaine "${domain}" : ${data.error?.message ?? `HTTP ${res.status}`}` };
+          }
+
+          return {
+            verified: data.verified,
+            verification: data.verification,
+            message: data.verified
+              ? `Domaine "${domain}" attaché et déjà vérifié.`
+              : `Domaine "${domain}" attaché mais pas encore vérifié — l'utilisateur doit ajouter les enregistrements DNS indiqués dans "verification" chez son registrar (LWS ou autre).`,
+          };
+        } catch (error) {
+          return {
+            message: `Échec de l'appel à l'API Vercel : ${error instanceof Error ? error.message : 'erreur inconnue'}`,
           };
         }
       },
