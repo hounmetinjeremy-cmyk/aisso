@@ -20,8 +20,13 @@ import { persistImportedFilesToSnapshot } from '~/lib/.server/llm/persist-import
  * seule) déjà en place.
  */
 
-// Généreux pour couvrir le réveil à froid du tier gratuit Render (endormi après 15 min d'inactivité, 30-60s pour se réveiller) + la commande elle-même.
-const FETCH_TIMEOUT_MS = 100_000;
+// Généreux pour couvrir le réveil à froid du tier gratuit Render (endormi
+// après 15 min d'inactivité, 30-60s pour se réveiller) + la commande
+// elle-même, qui peut légitimement tourner jusqu'à MAX_TIMEOUT_MS côté
+// exec-service (300s, voir exec-service/server.js) — ce timeout DOIT donc
+// rester strictement supérieur à 300s + marge de réveil, sinon le fetch
+// abandonne alors que la commande aurait fini par réussir côté serveur.
+const FETCH_TIMEOUT_MS = 360_000;
 
 export function buildExecServiceTools(params: {
   execServiceUrl: string | null;
@@ -107,7 +112,7 @@ export function buildExecServiceTools(params: {
      * CRITIQUE : le disque du terminal (exec-service) et l'éditeur de
      * l'utilisateur (workbenchStore, dans son navigateur) sont deux endroits
      * de stockage totalement SÉPARÉS — un `git clone`/fichier créé via
-     * run_command n'apparaît JAMAIS automatiquement dans l'éditeur. Cet
+     * run_command n'apparait JAMAIS automatiquement dans l'éditeur. Cet
      * outil est le seul pont entre les deux : il lit les fichiers réels du
      * terminal et les place dans l'éditeur, exactement comme
      * import_github_repo le fait pour un import GitHub (même mécanisme
@@ -115,7 +120,7 @@ export function buildExecServiceTools(params: {
      */
     sync_terminal_files_to_editor: tool({
       description:
-        "Copie les fichiers RÉELS du terminal (dossier du workspace exec-service, ex: après un git clone/npm install/build ou des modifications faites via run_command) dans l'éditeur de l'utilisateur, pour qu'il les voie. Le terminal et l'éditeur sont deux endroits séparés : rien de fait via run_command n'apparaît dans l'éditeur tant que cet outil n'a pas été appelé. Appelle-le après avoir cloné/construit/modifié un projet via run_command si l'utilisateur doit voir ou garder le résultat — sinon ce travail reste invisible et perdu au prochain redémarrage à froid du service. Exclut automatiquement node_modules/.git/dist/build et assimilés. IMPORTANT sur markAsChanged : synchroniser ne pousse PAS automatiquement sur GitHub par défaut (comme importer un dépôt existant pour le consulter) — mets markAsChanged=true seulement quand ce travail est le résultat que l'utilisateur veut vraiment sauvegarder (un correctif que tu as fait, un projet construit pour lui), pour qu'il rejoigne le push automatique de fin de tour au même titre qu'un <boltAction type=\"file\">.",
+        "Copie les fichiers RÉELS du terminal (dossier du workspace exec-service, ex: après un git clone/npm install/build ou des modifications faites via run_command) dans l'éditeur de l'utilisateur, pour qu'il les voie. Le terminal et l'éditeur sont deux endroits séparés : rien de fait via run_command n'apparait dans l'éditeur tant que cet outil n'a pas été appelé. Appelle-le après avoir cloné/construit/modifié un projet via run_command si l'utilisateur doit voir ou garder le résultat — sinon ce travail reste invisible et perdu au prochain redémarrage à froid du service. Exclut automatiquement node_modules/.git/dist/build et assimilés. IMPORTANT sur markAsChanged : synchroniser ne pousse PAS automatiquement sur GitHub par défaut (comme importer un dépôt existant pour le consulter) — mets markAsChanged=true seulement quand ce travail est le résultat que l'utilisateur veut vraiment sauvegarder (un correctif que tu as fait, un projet construit pour lui), pour qu'il rejoigne le push automatique de fin de tour au même titre qu'un <boltAction type="file">.",
       inputSchema: z.object({
         dir: z
           .string()
